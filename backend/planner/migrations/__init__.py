@@ -1,0 +1,1 @@
+#Hier verwaltet Django Änderungen an der Datenbank

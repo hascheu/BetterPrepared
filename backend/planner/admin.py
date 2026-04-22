@@ -1,6 +1,6 @@
 from django.contrib import admin
 
 # Register your models here.
-# planner/admin.py
+#hier registrierst du Modelle für das Django Admin Interface
 from .models import Event
 admin.site.register(Event)

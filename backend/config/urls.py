@@ -20,3 +20,14 @@ from django.urls import path
 urlpatterns = [
     path('admin/', admin.site.urls),
 ]
+
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from planner.views import EventViewSet
+
+router = DefaultRouter()
+router.register(r'events', EventViewSet)
+
+urlpatterns = [
+    path('api/', include(router.urls)),
+]

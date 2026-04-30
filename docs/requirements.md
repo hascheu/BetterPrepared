@@ -104,27 +104,84 @@ Extras:
 - mood
 - menstrual cycle
 
-
-
-
-Activity
-
-Foreign Key: user_id (Jeder Eintrag gehört einem User).
-
-Kategorie: Enum (Training, Work, Recovery, Social).
-
-Flexibility: Enum (Fix, Flexible, Optional).
-
-Zeitdaten: Start-Zeit, End-Zeit (oder Duration), Datum.
-
-Wiederholung: recurrence_rule (dafür gibt es in Django gute Bibliotheken).
-
-Status: (Planned, Completed, Skipped) – wichtig für den Gamification-Avatar!
-
-Relation:
-
 ## Data-dictionary
 
+### User
+
+| **Attribute** | **Data Type** | **Description** |
+| user_id | int | id for the identification of the user |
+| name | String | name of the user |
+| e-mail | String | mail adress of the user |
+| password | String| user chooses a password (8 digits, containing letters, numbers and special characters) |
+
+### Profile
+
+| **Attribute** | **Data Type** | **Description** |
+| profile_id | int | id for the identification of the profile |
+| user_id | int | user_id of the connected user account |
+| sport_type  | enum | optional |
+| chronical_disease | enum | optional |
+| status  | enum | optional |
+
+### Activity
+
+| **Attribute** | **Data Type** | **Description** |
+| activity_id | int | id for the identification of the activity |
+| profile_id | int | id of the connected profile |
+| activity_type  | enum | type: fix, flexible, free, optional |
+| frequency | enum | daily, weekly, monthly, yearly |
+| priority  | enum | 1 to 10 |
+| date_time  | DateTimeField | start_time, end_time, date |
+
+### Training
+
+| **Attribute** | **Data Type** | **Description** |
+| training_id | int | id for the identification of the training |
+| activity_id | int | id of the connected activity |
+| training_type  | enum | type: technical, sparring, pads, bagwork |
+| intensity| enum | high, medium, low |
+| heart_rate | int | average heart rate during the session |
+| rpe | int | Rate of Perceived Exertion (1 to 10) |
+
+### Responsibilty
+
+| **Attribute** | **Data Type** | **Description** |
+| responsibility_id | int | id for the identification of the responsibility |
+| activity_id | int | id of the connected activity |
+| responsibility_type  | enum | type: work, university, internship, school, others |
+| movement| enum | sitting, standing, walking, liftingt |
+| rpe | int | Rate of Perceived Exertion (1 to 10) |
+
+### Recovery
+
+| **Attribute** | **Data Type** | **Description** |
+| recovery_id | int | id for the identification of the recovery |
+| activity_id | int | id of the connected activity |
+| recovery_type | enum | type: active, passive, social|
+| active_recovery | enum | type: running, swimming, yoga, stretching, other |
+| passive_recovery| enum | type: ice bath, sauna, massage, powernap, other |
+| rpe | int | Rate of Perceived Exertion (1 to 10) |
+
+### Competition
+
+| **Attribute** | **Data Type** | **Description** |
+| competition_id | int | id for the identification of the competition |
+| activity_id | int | id of the connected activity |
+| status | enum | confirmed, planned, completed, cancelled |
+| result | enum | if past competition: win, loss, draw, free text field for aditional thoughts (tpye of loss and win) |
+| fighting_weight | int | registered weight for the competition |
+
+### Daily Metric
+
+| **Attribute** | **Data Type** | **Description** |
+| metric_id | int | id for the identification of the metric |
+| profile_id | int | id of the connected profile |
+| date | date | date when the metric has been tracked |
+| sleep | int | number of hours sleep |
+| mood | int | 1-10 |
+| current_weight | float | current weight of the user (additional: tracked in the morning, afternoon, evening)|
+| energy | enum | high, low, middle|
+| menstrual_cycle | enum | menstruation, follicular, ovulation, luteal |
 
 # Functional Requirements
 

@@ -37,6 +37,11 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+
+    # Externe Apps
+    'rest_framework',
+
+    # Meine App
     'planner',
 ]
 

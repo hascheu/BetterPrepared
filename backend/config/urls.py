@@ -1,33 +1,23 @@
-"""
-URL configuration for config project.
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/6.0/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
-"""
 from django.contrib import admin
-from django.urls import path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from planner.views import (
+    ProfileViewSet, ActivityViewSet, TrainingViewSet, 
+    ResponsibilityViewSet, RecoveryViewSet, 
+    CompetitionViewSet, DailyMetricViewSet
+)
+
+# Der Router erstellt automatisch alle Pfade für deine ViewSets
+router = DefaultRouter()
+router.register(r'profiles', ProfileViewSet)
+router.register(r'activities', ActivityViewSet)
+router.register(r'trainings', TrainingViewSet)
+router.register(r'responsibilities', ResponsibilityViewSet)
+router.register(r'recoveries', RecoveryViewSet)
+router.register(r'competitions', CompetitionViewSet)
+router.register(r'metrics', DailyMetricViewSet)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-]
-
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from planner.views import EventViewSet
-
-router = DefaultRouter()
-router.register(r'events', EventViewSet)
-
-urlpatterns = [
-    path('api/', include(router.urls)),
+    path('api/', include(router.urls)), # Das bindet alle oben registrierten Routen unter /api/ ein
 ]

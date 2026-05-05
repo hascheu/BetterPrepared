@@ -1,15 +1,14 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator, MaxValueValidator
+from django.core.exceptions import ValidationError
 
 # --- 1. PROFILE ---
 class Profile(models.Model):
-    # Enums for Profile
     class SportType(models.TextChoices):
         BOXING = 'BOXING', 'Boxing'
         MMA = 'MMA', 'MMA'
         THAIBOXING = 'THAIBOXING', 'Thai Boxing'
-        # Add more as needed
 
     class Status(models.TextChoices):
         ACTIVE = 'ACTIVE', 'Active'
@@ -26,16 +25,7 @@ class Profile(models.Model):
 
 
 # --- 2. ACTIVITY (Base Class) ---
-
 class Activity(models.Model):
-    
-    class ActivityType(models.TextChoices):
-        TRAINING = 'TRAINING', 'Training'
-        COMPETITION = 'COMPETITION', 'Competition'
-        RESPONSIBILITY = 'RESPONSIBILITY', 'Responsibility'
-        RECOVERY = 'RECOVERY', 'Recovery'
-        OTHER = 'OTHER', 'Other'
-
     class SchedulingType(models.TextChoices):
         FIXED = 'FIXED', 'Fixed'
         FLEXIBLE = 'FLEXIBLE', 'Flexible'
@@ -58,11 +48,8 @@ class Activity(models.Model):
         SAT = 5, 'Saturday'
         SUN = 6, 'Sunday'
 
-    # --- Basis ---
-
     profile = models.ForeignKey('Profile', on_delete=models.CASCADE, related_name='activities')
     title = models.CharField(max_length=255)
-    activity_type = models.CharField(max_length=20, choices=ActivityType.choices, default=ActivityType.OTHER)
     scheduling_type = models.CharField(max_length=20, choices=SchedulingType.choices, default=SchedulingType.FIXED)
     
     is_all_day = models.BooleanField(default=False)
@@ -72,8 +59,13 @@ class Activity(models.Model):
     start_time = models.TimeField(null=True, blank=True)
     end_time = models.TimeField(null=True, blank=True)
 
-    # --- TRAINING ---
+    def __str__(self):
+        return self.title
 
+
+# --- 3. SPEZIALISIERTE KLASSEN (Multi-Table Inheritance) ---
+
+class Training(Activity):
     class TrainingType(models.TextChoices):
         TECHNICAL = 'TECHNICAL', 'Technical'
         SPARRING = 'SPARRING', 'Sparring'
@@ -85,13 +77,12 @@ class Activity(models.Model):
         MEDIUM = 'MEDIUM', 'Medium'
         LOW = 'LOW', 'Low'
 
-    training_type = models.CharField(max_length=50, choices=TrainingType.choices, null=True, blank=True)
-    intensity = models.CharField(max_length=10, choices=Intensity.choices, null=True, blank=True)
+    training_type = models.CharField(max_length=50, choices=TrainingType.choices)
+    intensity = models.CharField(max_length=10, choices=Intensity.choices)
     heart_rate = models.IntegerField(blank=True, null=True)
     rpe = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(10)], null=True, blank=True)
-    
-    # --- RESPONSIBILITY ---
 
+class Responsibility(Activity):
     class RespType(models.TextChoices):
         WORK = 'WORK', 'Work'
         UNIVERSITY = 'UNIVERSITY', 'University'
@@ -105,36 +96,31 @@ class Activity(models.Model):
         WALKING = 'WALKING', 'Walking'
         LIFTING = 'LIFTING', 'Lifting'
 
-    responsibility_type = models.CharField(max_length=50, choices=RespType.choices, null=True, blank=True)
-    movement = models.CharField(max_length=20, choices=Movement.choices, null=True, blank=True)
+    responsibility_type = models.CharField(max_length=50, choices=RespType.choices)
+    movement = models.CharField(max_length=20, choices=Movement.choices)
     rpe = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(10)])
-    
-    # --- RECOVERY ---
 
+class Recovery(Activity):
     class RecoveryType(models.TextChoices):
         ACTIVE = 'ACTIVE', 'Active'
         PASSIVE = 'PASSIVE', 'Passive'
         SOCIAL = 'SOCIAL', 'Social'
 
-    recovery_type = models.CharField(max_length=20, choices=RecoveryType.choices, null=True, blank=True)
-    sub_type = models.CharField(max_length=100, help_text="e.g. sauna, swimming, massage", null=True, blank=True)
+    recovery_type = models.CharField(max_length=20, choices=RecoveryType.choices)
+    sub_type = models.CharField(max_length=100, blank=True, help_text="e.g. sauna, swimming, massage")
 
-    # --- COMPETITION ---
-
+class Competition(Activity):
     class Status(models.TextChoices):
         CONFIRMED = 'CONFIRMED', 'Confirmed'
         PLANNED = 'PLANNED', 'Planned'
         PAST = 'PAST', 'Past'
 
-    status = models.CharField(max_length=20, choices=Status.choices, null=True, blank=True)
-    result = models.TextField(blank=True, null=True, help_text="Win/Loss/Draw and details", null=True, blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PLANNED)
+    result = models.TextField(blank=True, null=True)
     fighting_weight = models.FloatField(null=True, blank=True)
 
-    def __str__(self):
-        return f"{self.title} ({self.get_category_display()})"
 
-
-# --- 3. DAILY METRIC ---
+# --- 4. DAILY METRIC ---
 class DailyMetric(models.Model):
     class Energy(models.TextChoices):
         HIGH = 'HIGH', 'High'

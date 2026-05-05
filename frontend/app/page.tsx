@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { useActivities } from '../../hooks/useActivities';
+import { useActivities } from '../hooks/useActivities';
 
 interface Activity {
     id: number;

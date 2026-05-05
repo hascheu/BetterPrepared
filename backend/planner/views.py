@@ -1,5 +1,3 @@
-# kleine Logik-Blöcke, die sagen: „Wenn jemand /api/trainings/ aufruft, gib ihm alle Trainings des eingeloggten Nutzers
-
 from rest_framework import viewsets
 from .models import (
     Profile, Activity, Training, Responsibility, 
@@ -11,13 +9,25 @@ from .serializers import (
     CompetitionSerializer, DailyMetricSerializer
 )
 
-class ProfileViewSet(viewsets.ModelViewSet):
-    queryset = Profile.objects.all()
-    serializer_class = ProfileSerializer
-
 class ActivityViewSet(viewsets.ModelViewSet):
-    queryset = Activity.objects.all()
+    """
+    Der zentrale Knotenpunkt für den Kalender.
+    'select_related' sorgt dafür, dass alle Spezial-Daten (Training, etc.)
+    effizient mit EINER Datenbankabfrage geladen werden.
+    """
     serializer_class = ActivitySerializer
+
+    def get_queryset(self):
+        # Wir sagen Django: Hol Activity UND schau direkt in die Untertabellen
+        return Activity.objects.all().select_related(
+            'training', 
+            'responsibility', 
+            'recovery', 
+            'competition'
+        )
+
+# Die anderen ViewSets bleiben spezifisch, falls du mal NUR Trainings 
+# oder NUR Competitions (z.B. in einer Statistik-Liste) abrufen willst.
 
 class TrainingViewSet(viewsets.ModelViewSet):
     queryset = Training.objects.all()
@@ -34,6 +44,10 @@ class RecoveryViewSet(viewsets.ModelViewSet):
 class CompetitionViewSet(viewsets.ModelViewSet):
     queryset = Competition.objects.all()
     serializer_class = CompetitionSerializer
+
+class ProfileViewSet(viewsets.ModelViewSet):
+    queryset = Profile.objects.all()
+    serializer_class = ProfileSerializer
 
 class DailyMetricViewSet(viewsets.ModelViewSet):
     queryset = DailyMetric.objects.all()

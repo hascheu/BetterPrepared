@@ -185,6 +185,24 @@ Extras:
 
 # Functional Requirements
 
+## Add Activities to the plan
+- choose flexibility, frequency, type, priority, date/time
+
+## Add Daily Metrics
+- manual
+- ggf. synchronize with external devices
+
+## Show a plan
+- app calculates the optimal plan and presents it to user
+- user can edit the plan
+- if there are conflicts the app is warning the user and user can adjust
+
+## Recovery Warning
+- systems send a warning to the user if:
+    - the training load is too high
+    - there is not enough time between sessions to rest
+    - data from external devices is alarming
+
 # Non-functional Requirements
 • Was sind (selbstverständliche) Erwartungen an das System?
 – Look and feel

@@ -1,46 +1,53 @@
-import { useState, useEffect } from 'react';
-import { useAuth } from '../../context/AuthContext';
-import { Platform } from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+// 1. Wir importieren nur den fertigen Hook
+import { useActivities } from '../../hooks/useActivities'; 
 
-export function useActivities() {
-  const [activities, setActivities] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const { token } = useAuth();
+export default function ActivitiesScreen() {
+  // 2. Wir nutzen den Hook, um die Daten zu holen
+  const { activities, loading } = useActivities();
 
-  useEffect(() => {
-    const fetchActivities = async () => {
-      // WICHTIG: IP-Adresse anpassen für mobiles Testen!
-      const apiUrl = Platform.OS === 'web' 
-        ? 'http://127.0.0.1:8000/api/activities/' 
-        : 'http://192.168.178.XX:8000/api/activities/';
+  // 3. Wenn es noch lädt, zeigen wir einen Spinner
+  if (loading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#007AFF" />
+        <Text>Lade Aktivitäten...</Text>
+      </View>
+    );
+  }
 
-      try {
-        const response = await fetch(apiUrl, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            // Hier schicken wir den Schlüssel mit, den wir beim Login gespeichert haben
-            'Authorization': `Bearer ${token}`,
-          },
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setActivities(data);
-        } else {
-          console.error("Fehler beim Laden der Aktivitäten:", response.status);
-        }
-      } catch (error) {
-        console.error("Netzwerkfehler:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (token) {
-      fetchActivities();
-    }
-  }, [token]); // Sobald sich der Token ändert (z.B. nach Login), neu laden
-
-  return { activities, loading };
+  // 4. Das eigentliche UI (JSX)
+  return (
+    <ScrollView style={styles.container}>
+      <Text style={styles.title}>Alle Aktivitäten</Text>
+      
+      {activities.length > 0 ? (
+        activities.map((activity: any) => (
+          <View key={activity.id} style={styles.card}>
+            <Text style={styles.activityTitle}>{activity.title}</Text>
+            <Text style={styles.dateText}>{activity.date}</Text>
+          </View>
+        ))
+      ) : (
+        <Text>Keine Aktivitäten vorhanden.</Text>
+      )}
+    </ScrollView>
+  );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 20, backgroundColor: '#fff' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, marginTop: 40 },
+  card: { 
+    padding: 15, 
+    backgroundColor: '#f8f9fa', 
+    borderRadius: 10, 
+    marginBottom: 10,
+    borderLeftWidth: 4,
+    borderLeftColor: '#007AFF' 
+  },
+  activityTitle: { fontSize: 18, fontWeight: '600' },
+  dateText: { color: '#666', fontSize: 14, marginTop: 4 }
+});

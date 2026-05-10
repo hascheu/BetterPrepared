@@ -41,10 +41,30 @@ INSTALLED_APPS = [
 
     # Externe Apps
     'rest_framework',
+    'rest_framework_simplejwt', # Das JWT-Modul
 
     # Meine App
     'planner',
 ]
+
+# Konfiguriere das REST Framework
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated', # Standardmäßig alles sperren
+    ),
+}
+
+# (Optional) JWT-Feineinstellungen
+from datetime import timedelta
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),  # Wie lange man eingeloggt bleibt
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),    # Wie lange man den Zugang erneuern kann
+    'ROTATE_REFRESH_TOKENS': True,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+}
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',

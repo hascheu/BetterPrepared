@@ -9,6 +9,8 @@ from .serializers import (
     CompetitionSerializer, DailyMetricSerializer
 )
 
+
+
 class ActivityViewSet(viewsets.ModelViewSet):
     """
     Der zentrale Knotenpunkt für den Kalender.

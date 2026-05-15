@@ -12,5 +12,5 @@ urlpatterns = [
     # Refresh: Schicke Refresh Token -> erhalte neuen Access Token
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('admin/', admin.site.urls),
-    path('api/', include('planner.urls')), # Hier wird die App eingebunden
+    path('api/', include('activities.urls')), # Hier wird die App eingebunden
 ]

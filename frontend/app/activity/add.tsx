@@ -21,65 +21,84 @@ export default function AddActivityScreen() {
   const { token } = useAuth();
   const router = useRouter();
 
-  // 1. Schema laden, sobald ein Typ ausgewählt wurde
-  useEffect(() => {
-    if (!selectedType) return;
+  // 1. Schema laden (angepasste URL)
+useEffect(() => {
+  if (!selectedType) return;
 
-    const fetchSchema = async () => {
-      setLoadingSchema(true);
-      try {
-        // Hinweis: Erstelle diesen Endpunkt in Django (z.B. /api/schemas/<type>/)
-        const response = await fetch(`http://127.0.0.1:8000/api/schemas/${selectedType}/`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const data = await response.json();
-        setSchema(data.fields || []);
-        
-        // Initialisiere formData mit leeren Strings für alle Schema-Felder
-        const initialData: Record<string, string> = { title: '', date: new Date().toISOString().split('T')[0] };
-        data.fields.forEach((f: FormField) => initialData[f.name] = '');
-        setFormData(initialData);
-      } catch (error) {
-        console.error("Schema konnte nicht geladen werden", error);
-        // Fallback für 'other' oder bei Fehler: Basis-Felder
-        setSchema([]);
-        setFormData({ title: '', date: new Date().toISOString().split('T')[0] });
-      } finally {
-        setLoadingSchema(false);
-      }
-    };
-
-    fetchSchema();
-  }, [selectedType]);
-
-  const handleInputChange = (name: string, value: string) => {
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const submitData = async () => {
+  const fetchSchema = async () => {
+    setLoadingSchema(true);
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/activities/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          title: formData.title,
-          date: formData.date,
-          category: selectedType,
-          extra_details: formData // Der Rest landet im JSONField
-        })
+      // Die URL wurde an das Django-ViewSet angepasst
+      const response = await fetch(`http://127.0.0.1:8000/api/activities/schema/?type=${selectedType}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
-
-      if (response.ok) {
-        Alert.alert("Erfolg", "Aktivität gespeichert!");
-        router.replace('/(tabs)/activities');
-      }
+      
+      if (!response.ok) throw new Error("Fehler beim Laden");
+      
+      const data = await response.json();
+      setSchema(data.fields || []);
+      
+      // WICHTIG: Hier initialisieren wir formData mit leeren Werten
+      // Wir behalten title und date bei, fügen aber die neuen Felder hinzu
+      const initialData: Record<string, string> = { 
+        title: '', 
+        date: new Date().toISOString().split('T')[0] 
+      };
+      
+      data.fields.forEach((f: any) => {
+        initialData[f.name] = '';
+      });
+      setFormData(initialData);
     } catch (error) {
-      Alert.alert("Fehler", "Speichern fehlgeschlagen.");
+      console.error("Schema konnte nicht geladen werden", error);
+      setSchema([]);
+    } finally {
+      setLoadingSchema(false);
     }
   };
+
+  fetchSchema();
+}, [selectedType, token]);
+
+// Diese Funktion muss innerhalb deiner AddActivityScreen Komponente stehen
+const handleInputChange = (name: string, value: string) => {
+  setFormData(prev => ({
+    ...prev,
+    [name]: value
+  }));
+};
+
+// 2. Daten speichern (Flache Struktur & activity_type)
+const submitData = async () => {
+  try {
+    // Wir bauen das Objekt so zusammen, wie der neue Serializer es erwartet
+    const payload = {
+      ...formData,
+      activity_type: selectedType, // 'training', 'recovery', etc.
+      profile: 1, // Temporär: Hier sollte eigentlich die ID des User-Profils stehen!
+    };
+
+    const response = await fetch('http://127.0.0.1:8000/api/activities/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (response.ok) {
+      Alert.alert("Erfolg", "Aktivität gespeichert!");
+      router.replace('/(tabs)/activities');
+    } else {
+      const errorData = await response.json();
+      console.log("Backend-Fehler:", errorData);
+      Alert.alert("Fehler", "Prüfe deine Eingaben.");
+    }
+  } catch (error) {
+    Alert.alert("Fehler", "Server nicht erreichbar.");
+  }
+};
 
   const validateAndSave = () => {
     // Basis-Validierung (Titel & Datum sind Pflicht)

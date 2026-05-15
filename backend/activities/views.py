@@ -1,4 +1,7 @@
 from rest_framework import viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
+
 from .models import (
     Profile, Activity, Training, Responsibility, 
     Recovery, Competition, DailyMetric
@@ -8,8 +11,6 @@ from .serializers import (
     ResponsibilitySerializer, RecoverySerializer, 
     CompetitionSerializer, DailyMetricSerializer
 )
-
-
 
 class ActivityViewSet(viewsets.ModelViewSet):
     """
@@ -27,26 +28,58 @@ class ActivityViewSet(viewsets.ModelViewSet):
             'recovery', 
             'competition'
         )
+    
+    @action(detail=False, methods=['get'])
+    def schema(self, request):
+        activity_type = request.query_params.get('type')
 
-# Die anderen ViewSets bleiben spezifisch, falls du mal NUR Trainings 
-# oder NUR Competitions (z.B. in einer Statistik-Liste) abrufen willst.
+        # Gemeinsame Felder für ALLE Aktivitäten (aus der Klasse Activity)
+        base_fields = [
+            {'name': 'title', 'label': 'Titel', 'type': 'text', 'required': True},
+            {'name': 'date', 'label': 'Datum', 'type': 'date', 'required': False},
+            {'name': 'start_time', 'label': 'Startzeit', 'type': 'time', 'required': False},
+            {'name': 'end_time', 'label': 'Endzeit', 'type': 'time', 'required': False},
+            {
+                'name': 'scheduling_type', 
+                'label': 'Planungstyp', 
+                'type': 'select', 
+                'options': [choice for choice in Activity.SchedulingType.choices]
+            },
+        ]
 
-class TrainingViewSet(viewsets.ModelViewSet):
-    queryset = Training.objects.all()
-    serializer_class = TrainingSerializer
+        # Spezifische Felder je nach Typ
+        specific_fields = []
 
-class ResponsibilityViewSet(viewsets.ModelViewSet):
-    queryset = Responsibility.objects.all()
-    serializer_class = ResponsibilitySerializer
+        if activity_type == 'training':
+            specific_fields = [
+                {'name': 'training_type', 'label': 'Trainingsart', 'type': 'select', 'options': [c for c in Training.TrainingType.choices]},
+                {'name': 'intensity', 'label': 'Intensität', 'type': 'select', 'options': [c for c in Training.Intensity.choices]},
+                {'name': 'rpe', 'label': 'Anstrengung (RPE 1-10)', 'type': 'number', 'min': 1, 'max': 10},
+                {'name': 'heart_rate', 'label': 'Puls (Ø)', 'type': 'number'},
+            ]
+        elif activity_type == 'responsibility':
+            specific_fields = [
+                {'name': 'responsibility_type', 'label': 'Kategorie', 'type': 'select', 'options': [c for c in Responsibility.RespType.choices]},
+                {'name': 'movement', 'label': 'Belastung', 'type': 'select', 'options': [c for c in Responsibility.Movement.choices]},
+                {'name': 'rpe', 'label': 'Anstrengung (1-10)', 'type': 'number'},
+            ]
+        elif activity_type == 'recovery':
+            specific_fields = [
+                {'name': 'recovery_type', 'label': 'Erholungsart', 'type': 'select', 'options': [c for c in Recovery.RecoveryType.choices]},
+                {'name': 'sub_type', 'label': 'Details (z.B. Sauna)', 'type': 'text'},
+            ]
+        elif activity_type == 'competition':
+            specific_fields = [
+                {'name': 'status', 'label': 'Status', 'type': 'select', 'options': [c for c in Competition.Status.choices]},
+                {'name': 'fighting_weight', 'label': 'Kampfgewicht (kg)', 'type': 'number'},
+                {'name': 'result', 'label': 'Ergebnis/Notizen', 'type': 'textarea'},
+            ]
 
-class RecoveryViewSet(viewsets.ModelViewSet):
-    queryset = Recovery.objects.all()
-    serializer_class = RecoverySerializer
-
-class CompetitionViewSet(viewsets.ModelViewSet):
-    queryset = Competition.objects.all()
-    serializer_class = CompetitionSerializer
-
+        return Response({
+            'type': activity_type,
+            'fields': base_fields + specific_fields
+        })
+    
 class ProfileViewSet(viewsets.ModelViewSet):
     queryset = Profile.objects.all()
     serializer_class = ProfileSerializer

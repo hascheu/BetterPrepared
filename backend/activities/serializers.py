@@ -11,44 +11,50 @@ class ProfileSerializer(serializers.ModelSerializer):
         model = Profile
         fields = '__all__'
 
-# --- Spezial-Serializer (Zuerst definieren!) ---
-
+# --- Spezial-Serializer ---
+# Wichtig: Bei Vererbung in Meta.model die Unterklasse angeben!
 class TrainingSerializer(serializers.ModelSerializer):
     class Meta:
         model = Training
-        fields = '__all__'
+        fields = ['training_type', 'intensity', 'heart_rate', 'rpe']
 
 class ResponsibilitySerializer(serializers.ModelSerializer):
     class Meta:
         model = Responsibility
-        fields = '__all__'
+        fields = ['responsibility_type', 'movement', 'rpe']
 
 class RecoverySerializer(serializers.ModelSerializer):
     class Meta:
         model = Recovery
-        fields = '__all__'
+        fields = ['recovery_type', 'sub_type']
 
 class CompetitionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Competition
+        fields = ['status', 'result', 'fighting_weight']
+
+class DailyMetricSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DailyMetric
         fields = '__all__'
 
-# --- Der "Intelligente" ActivitySerializer ---
+# --- Der zentrale ActivitySerializer ---
 
 class ActivitySerializer(serializers.ModelSerializer):
-    # Wir fügen ein extra Feld hinzu, um die Details der Unterklasse zu schicken
-    extra_details = serializers.SerializerMethodField()
+    extra_details = serializers.SerializerMethodField(read_only=True)
+    # Ein Hilfsfeld für das Frontend, um den Typ beim Erstellen mitzugeben
+    activity_type = serializers.CharField(write_only=True, required=False)
 
     class Meta:
         model = Activity
         fields = [
             'id', 'profile', 'title', 'scheduling_type', 
             'is_all_day', 'frequency', 'date', 'weekday', 
-            'start_time', 'end_time', 'extra_details'
+            'start_time', 'end_time', 'extra_details', 'activity_type'
         ]
 
     def get_extra_details(self, obj):
-        # Prüfung: Zu welcher Unterklasse gehört diese Activity?
+        # Nutzt die One-to-One Relation der Vererbung (lowercase model name)
         if hasattr(obj, 'training'):
             return TrainingSerializer(obj.training).data
         if hasattr(obj, 'responsibility'):
@@ -59,7 +65,22 @@ class ActivitySerializer(serializers.ModelSerializer):
             return CompetitionSerializer(obj.competition).data
         return None
 
-class DailyMetricSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = DailyMetric
-        fields = '__all__'
+    def create(self, validated_data):
+        # 1. Den Typ aus den Daten extrahieren
+        activity_type = validated_data.pop('activity_type', None)
+        
+        # 2. Die restlichen Daten sind für die Basis-Activity oder Unterklasse
+        # Da Training von Activity erbt, können wir direkt die Unterklasse erstellen.
+        # Django erstellt dann automatisch den Activity-Eintrag mit.
+        
+        if activity_type == 'training':
+            return Training.objects.create(**validated_data)
+        elif activity_type == 'responsibility':
+            return Responsibility.objects.create(**validated_data)
+        elif activity_type == 'recovery':
+            return Recovery.objects.create(**validated_data)
+        elif activity_type == 'competition':
+            return Competition.objects.create(**validated_data)
+        
+        # Fallback: Nur eine Basis-Activity erstellen
+        return Activity.objects.create(**validated_data)

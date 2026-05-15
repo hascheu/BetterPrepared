@@ -44,7 +44,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt', # Das JWT-Modul
 
     # Meine App
-    'planner',
+    'activities',
 ]
 
 # Konfiguriere das REST Framework

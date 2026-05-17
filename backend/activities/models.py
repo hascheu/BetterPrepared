@@ -36,8 +36,6 @@ class Activity(models.Model):
         ONCE = 'ONCE', 'Once'
         DAILY = 'DAILY', 'Daily'
         WEEKLY = 'WEEKLY', 'Weekly'
-        MONTHLY = 'MONTHLY', 'Monthly'
-        YEARLY = 'YEARLY', 'Yearly'
     
     class Weekday(models.IntegerChoices):
         MON = 0, 'Monday'
@@ -54,10 +52,38 @@ class Activity(models.Model):
     
     is_all_day = models.BooleanField(default=False)
     frequency = models.CharField(max_length=20, choices=Frequency.choices, default='ONCE')
-    date = models.DateField(null=True, blank=True)
+    date = models.DateField(help_text="Datum der Ausführung oder der ersten Ausführung bei Wiederholungen.")
     weekday = models.IntegerField(choices=Weekday.choices, null=True, blank=True)
     start_time = models.TimeField(null=True, blank=True)
     end_time = models.TimeField(null=True, blank=True)
+
+    def clean(self):
+        super().clean()
+
+        # 2. Validierung für WEEKLY -> Weekday muss gesetzt sein
+        if self.frequency == self.Frequency.WEEKLY and self.weekday is None:
+            raise ValidationError({
+                'weekday': 'Wenn die Frequenz wöchentlich ist, muss ein Wochentag ausgewählt werden.'
+            })
+
+        # 3. Validierung für Zeiten vs. All-Day
+        if not self.is_all_day:
+            errors = {}
+            if not self.start_time:
+                errors['start_time'] = 'Startzeit ist erforderlich, wenn es keine ganztägige Aktivität ist.'
+            if not self.end_time:
+                errors['end_time'] = 'Endzeit ist erforderlich, wenn es keine ganztägige Aktivität ist.'
+            if errors:
+                raise ValidationError(errors)
+        else:
+            # Wenn ganztägig, setzen wir die Zeiten automatisch auf None, um die DB sauber zu halten
+            self.start_time = None
+            self.end_time = None
+
+    def save(self, *args, **kwargs):
+        # Ruft die clean-Methode vor dem Speichern auf (wichtig für die Validierung im Django-Admin)
+        self.full_clean()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.title
@@ -77,8 +103,8 @@ class Training(Activity):
         MEDIUM = 'MEDIUM', 'Medium'
         LOW = 'LOW', 'Low'
 
-    training_type = models.CharField(max_length=50, choices=TrainingType.choices)
-    intensity = models.CharField(max_length=10, choices=Intensity.choices)
+    training_type = models.CharField(max_length=50, choices=TrainingType.choices, blank=True, null=True)
+    intensity = models.CharField(max_length=10, choices=Intensity.choices, blank=True, null=True)
     heart_rate = models.IntegerField(blank=True, null=True)
     rpe = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(10)], null=True, blank=True)
 
@@ -96,9 +122,9 @@ class Responsibility(Activity):
         WALKING = 'WALKING', 'Walking'
         LIFTING = 'LIFTING', 'Lifting'
 
-    responsibility_type = models.CharField(max_length=50, choices=RespType.choices)
-    movement = models.CharField(max_length=20, choices=Movement.choices)
-    rpe = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(10)])
+    responsibility_type = models.CharField(max_length=50, choices=RespType.choices, blank=True, null=True)
+    movement = models.CharField(max_length=20, choices=Movement.choices, blank=True, null=True)
+    rpe = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(10)], blank=True, null=True)
 
 class Recovery(Activity):
     class RecoveryType(models.TextChoices):
@@ -106,8 +132,8 @@ class Recovery(Activity):
         PASSIVE = 'PASSIVE', 'Passive'
         SOCIAL = 'SOCIAL', 'Social'
 
-    recovery_type = models.CharField(max_length=20, choices=RecoveryType.choices)
-    sub_type = models.CharField(max_length=100, blank=True, help_text="e.g. sauna, swimming, massage")
+    recovery_type = models.CharField(max_length=20, choices=RecoveryType.choices, blank=True, null=True)
+    sub_type = models.CharField(max_length=100, blank=True, help_text="e.g. sauna, swimming, massage", null=True)
 
 class Competition(Activity):
     class Status(models.TextChoices):
@@ -119,6 +145,13 @@ class Competition(Activity):
     result = models.TextField(blank=True, null=True)
     fighting_weight = models.FloatField(null=True, blank=True)
 
+class OtherActivity(Activity):
+    """
+    Für alle Aktivitäten, die in keine andere Kategorie passen.
+    Bietet ein einfaches Freitextfeld für Notizen.
+    """
+    notes = models.TextField(blank=True, null=True,  help_text="Any details about this activity")
+   
 
 # --- 4. DAILY METRIC ---
 class DailyMetric(models.Model):

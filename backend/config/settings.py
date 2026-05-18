@@ -45,6 +45,7 @@ INSTALLED_APPS = [
 
     # Meine App
     'activities',
+    'users',
 ]
 
 # Konfiguriere das REST Framework

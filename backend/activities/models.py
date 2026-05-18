@@ -3,27 +3,6 @@ from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.core.exceptions import ValidationError
 
-# --- 1. PROFILE ---
-class Profile(models.Model):
-    class SportType(models.TextChoices):
-        BOXING = 'BOXING', 'Boxing'
-        MMA = 'MMA', 'MMA'
-        THAIBOXING = 'THAIBOXING', 'Thai Boxing'
-
-    class Status(models.TextChoices):
-        ACTIVE = 'ACTIVE', 'Active'
-        INJURED = 'INJURED', 'Injured'
-        RECOVERY = 'RECOVERY', 'Recovery'
-
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
-    sport_type = models.CharField(max_length=50, choices=SportType.choices, blank=True, null=True)
-    chronical_disease = models.TextField(blank=True, null=True)
-    status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE)
-
-    def __str__(self):
-        return f"Profile: {self.user.username}"
-
-
 # --- 2. ACTIVITY (Base Class) ---
 class Activity(models.Model):
     class SchedulingType(models.TextChoices):
@@ -46,7 +25,7 @@ class Activity(models.Model):
         SAT = 5, 'Saturday'
         SUN = 6, 'Sunday'
 
-    profile = models.ForeignKey('Profile', on_delete=models.CASCADE, related_name='activities')
+    profile = models.ForeignKey('users.Profile', on_delete=models.CASCADE, related_name='activities')
     title = models.CharField(max_length=255)
     scheduling_type = models.CharField(max_length=20, choices=SchedulingType.choices, default=SchedulingType.FIXED)
     
@@ -166,7 +145,7 @@ class DailyMetric(models.Model):
         OVULATION = 'OVULATION', 'Ovulation'
         LUTEAL = 'LUTEAL', 'Luteal'
 
-    profile = models.ForeignKey(Profile, on_delete=models.CASCADE, related_name='metrics')
+    profile = models.ForeignKey('users.Profile', on_delete=models.CASCADE, related_name='metrics')
     date = models.DateField()
     sleep_hours = models.FloatField()
     mood = models.IntegerField(validators=[MinValueValidator(1), MaxValueValidator(10)])

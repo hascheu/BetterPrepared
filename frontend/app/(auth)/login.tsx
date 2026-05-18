@@ -21,7 +21,7 @@ export default function LoginScreen() {
 
     try {
       // 1. Anfrage an dein Django-Backend
-      const response = await fetch('http://127.0.0.1:8000/api/token/', {
+      const response = await fetch('http://127.0.0.1:8000/api/users/login/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

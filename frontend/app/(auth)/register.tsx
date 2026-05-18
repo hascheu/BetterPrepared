@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useAuth } from '../../context/AuthContext';
 
 export default function RegisterScreen() {
   const [username, setUsername] = useState('');
@@ -8,6 +9,7 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [passwordRepeat, setPasswordRepeat] = useState('');
   const [loading, setLoading] = useState(false);
+  const { signIn } = useAuth();
   
   const router = useRouter();
 
@@ -42,16 +44,25 @@ export default function RegisterScreen() {
       const data = await response.json();
 
       if (response.ok) {
-        Alert.alert(
-          'Erfolg', 
-          'Dein Account wurde erfolgreich angelegt!',
-          [
-            { 
-              text: 'Jetzt einloggen', 
-              onPress: () => router.replace('/(auth)/login') 
-            }
-          ]
-        );
+        console.log('Registrierung erfolgreich, starte Auto-Login...');
+
+      const loginResponse = await fetch('http://127.0.0.1:8000/api/users/login/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }), // Nutzt die gerade eingetippten Daten
+      });
+
+      const loginData = await loginResponse.json();
+
+      if (loginResponse.ok) {
+        // Token an den AuthContext übergeben -> Leitet automatisch zu den (tabs) weiter!
+        await signIn(loginData.access);
+      } else {
+        // Falls der Token-Schnittstelle wider Erwarten etwas fehlt
+        Alert.alert('Konto erstellt', 'Bitte logge dich auf der Startseite manuell ein.');
+        router.replace('/(auth)/login');
+      }
+
       } else {
         // Django gibt oft detaillierte Fehlermeldungen zurück (z.B. "Username existiert bereits")
         let errorMessage = 'Prüfe deine Eingaben.';

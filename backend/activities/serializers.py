@@ -1,16 +1,9 @@
 from rest_framework import serializers
 from django.core.exceptions import ValidationError as DjangoValidationError
 from .models import (
-    OtherActivity, Profile, Activity, Training, Responsibility, 
+    OtherActivity, Activity, Training, Responsibility, 
     Recovery, Competition, DailyMetric
 )
-
-# --- Basis-Serializer ---
-
-class ProfileSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Profile
-        fields = '__all__'
 
 # --- Spezial-Serializer ---
 

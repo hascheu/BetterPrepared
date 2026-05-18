@@ -1,5 +1,6 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
+from .models import Profile
 
 class RegisterSerializer(serializers.ModelSerializer):
     # Das Passwort soll nur geschrieben, aber niemals über die API wieder ausgelesen werden dürfen
@@ -29,3 +30,14 @@ class RegisterSerializer(serializers.ModelSerializer):
             password=validated_data['password']
         )
         return user
+    
+
+class ProfileSerializer(serializers.ModelSerializer):
+    # Diese Felder holen wir schreibgeschützt direkt aus dem verknüpften User-Modell
+    username = serializers.CharField(source='user.username', read_only=True)
+    email = serializers.CharField(source='user.email', read_only=True)
+
+    class Meta:
+        model = Profile
+        # Diese Felder kann das Frontend abrufen und (bis auf username/email) bearbeiten
+        fields = ['username', 'email', 'sport_type', 'chronical_disease', 'status']

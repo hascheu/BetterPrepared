@@ -1,11 +1,12 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-# Wichtig: Der Import muss auf deine App zeigen
 from .views import ActivityViewSet, DailyMetricViewSet
 
 router = DefaultRouter()
+
+# Füge hier bei beiden Registern den 'basename' am Ende hinzu!
 router.register(r'activities', ActivityViewSet, basename='activity')
-router.register(r'metrics', DailyMetricViewSet)
+router.register(r'metrics', DailyMetricViewSet, basename='dailymetric')
 
 urlpatterns = [
     path('', include(router.urls)),

@@ -2,6 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.core.exceptions import ValidationError
+from django.utils import timezone  # WICHTIG: Für das automatische Datum importieren
 
 # --- 2. ACTIVITY (Base Class) ---
 class Activity(models.Model):
@@ -31,42 +32,63 @@ class Activity(models.Model):
     
     is_all_day = models.BooleanField(default=False)
     frequency = models.CharField(max_length=20, choices=Frequency.choices, default='ONCE')
-    date = models.DateField(help_text="Datum der Ausführung oder der ersten Ausführung bei Wiederholungen.")
+    
+    # ÄNDERUNG: null=True und blank=True erlauben, damit es optional wird
+    date = models.DateField(
+        null=True, 
+        blank=True, 
+        help_text="Pflicht bei ONCE. Startdatum bei DAILY/WEEKLY (optional, Standard ist heute)."
+    )
     weekday = models.IntegerField(choices=Weekday.choices, null=True, blank=True)
     start_time = models.TimeField(null=True, blank=True)
     end_time = models.TimeField(null=True, blank=True)
 
     def clean(self):
         super().clean()
+        errors = {}
 
-        # 2. Validierung für WEEKLY -> Weekday muss gesetzt sein
-        if self.frequency == self.Frequency.WEEKLY and self.weekday is None:
-            raise ValidationError({
-                'weekday': 'Wenn die Frequenz wöchentlich ist, muss ein Wochentag ausgewählt werden.'
-            })
+        # 1. Validierung & Logik für FREQUENZEN
+        
+        # Regel: ONCE -> Datum ist absolut verpflichtend
+        if self.frequency == self.Frequency.ONCE:
+            if not self.date:
+                errors['date'] = 'Für einmalige Aktivitäten ist ein Datum erforderlich.'
 
-        # 3. Validierung für Zeiten vs. All-Day
+        # Regel: DAILY -> Datum optional, falls leer: setze auf heute
+        elif self.frequency == self.Frequency.DAILY:
+            if not self.date:
+                self.date = timezone.now().date()
+
+        # Regel: WEEKLY -> Wochentag verpflichtend, Datum optional (falls leer: heute)
+        elif self.frequency == self.Frequency.WEEKLY:
+            if self.weekday is None:
+                errors['weekday'] = 'Wenn die Frequenz wöchentlich ist, muss ein Wochentag ausgewählt werden.'
+            if not self.date:
+                self.date = timezone.now().date()
+
+        # 2. Validierung für Zeiten vs. All-Day (Nur wenn nicht ganztägig)
         if not self.is_all_day:
-            errors = {}
             if not self.start_time:
                 errors['start_time'] = 'Startzeit ist erforderlich, wenn es keine ganztägige Aktivität ist.'
             if not self.end_time:
                 errors['end_time'] = 'Endzeit ist erforderlich, wenn es keine ganztägige Aktivität ist.'
-            if errors:
-                raise ValidationError(errors)
         else:
-            # Wenn ganztägig, setzen wir die Zeiten automatisch auf None, um die DB sauber zu halten
+            # Wenn ganztägig, bereinigen wir die Zeiten für die Datenbank
             self.start_time = None
             self.end_time = None
 
+        # Wenn gesammelte Fehler existieren, werfen wir sie gesammelt für das Formular
+        if errors:
+            raise ValidationError(errors)
+
     def save(self, *args, **kwargs):
-        # Ruft die clean-Methode vor dem Speichern auf (wichtig für die Validierung im Django-Admin)
+        # clean() manuell aufrufen, damit die Logik (wie das automatische Datum) 
+        # auch bei API-Saves über den Serializer getriggert wird!
         self.full_clean()
         super().save(*args, **kwargs)
 
     def __str__(self):
         return self.title
-
 
 # --- 3. SPEZIALISIERTE KLASSEN (Multi-Table Inheritance) ---
 

@@ -24,7 +24,8 @@ class ActivityViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Activity.objects.filter(profile__user=self.request.user).all().select_related(
+        # Zeigt jedem User nur seine eigenen Aktivitäten
+        return Activity.objects.filter(profile__user=self.request.user).select_related(
             'training', 
             'responsibility', 
             'recovery', 
@@ -33,8 +34,14 @@ class ActivityViewSet(viewsets.ModelViewSet):
         )
     
     def perform_create(self, serializer):
+        # 1. Profil des aktuell eingeloggten Users holen
         profile = Profile.objects.get(user=self.request.user)
-        serializer.save(profile=profile)
+        
+        # 2. Alle Daten, die das Frontend geschickt hat (auch die dynamischen!), abfangen
+        raw_data = self.request.data
+        
+        # 3. Das Profil in die Validierungsdaten injizieren und mitspeichern
+        serializer.save(profile=profile, **raw_data)
     
     def _get_field_type(self, django_field):
         """Hilfsfunktion: Übersetzt Django-Feldtypen in Frontend-Typen"""
@@ -60,30 +67,24 @@ class ActivityViewSet(viewsets.ModelViewSet):
             
         form_fields = []
         
-        # Iteriere durch alle lokalen (selbst definierten) Felder des Modells
         for field in model_class._meta.local_fields:
-            # Überspringe IDs, Fremdschlüssel und explizit ausgeschlossene Felder
             if field.name in exclude_fields or field.primary_key or isinstance(field, models.ForeignKey):
                 continue
                 
-            # Ermittle das Label (nutzt verbose_name von Django oder den Feldnamen)
             label = getattr(field, 'verbose_name', field.name).capitalize()
             
             field_config = {
                 'name': field.name,
                 'label': label,
                 'type': 'text',
-                # Ein Feld ist im Formular erforderlich, wenn 'blank=False' im Modell steht
                 'required': not field.blank 
             }
             
-            # 1. Prüfen, ob das Feld feste Auswahlmöglichkeiten (Choices) hat
             if field.choices:
                 field_config['type'] = 'select'
-                # Übergibt dem Frontend eine Liste aus [Wert, Lesbarer_Text]
-                field_config['options'] = [choice for choice in field.choices]
+                # Korrektur für das JSON-Format: Übergibt lesbare Objekte statt roher Tupel
+                field_config['options'] = [{'value': choice[0], 'label': choice[1]} for choice in field.choices]
             else:
-                # 2. Wenn keine Choices, ermittle den generischen Typ (date, number, etc.)
                 field_config['type'] = self._get_field_type(field)
                 
             form_fields.append(field_config)
@@ -94,12 +95,10 @@ class ActivityViewSet(viewsets.ModelViewSet):
     def schema(self, request):
         """
         Gibt dem Frontend die Struktur vor, welche Felder benötigt werden.
-        Liest die Felder DYNAMISCH aus den Modellen im models.py aus.
         URL: /api/activities/schema/?type=training
         """
         activity_type = request.query_params.get('type', 'other')
 
-        # Zuordnung der Typen zu den spezialisierten Untermodellen
         type_to_model = {
             'training': Training,
             'competition': Competition,
@@ -107,25 +106,34 @@ class ActivityViewSet(viewsets.ModelViewSet):
             'recovery': Recovery,
             'other': OtherActivity,
         }
+        # ÄNDERUNG IN VIEWS.PY (in der schema-Methode):
+# Wir filtern 'profile', 'title' UND 'date' direkt bei der Generierung heraus!
+        base_fields = self._extract_fields_from_model(Activity, exclude_fields=['profile', 'title', 'date'])
 
-        # 1. Basis-Felder direkt aus dem Activity-Modell auslesen
-        # Wir schließen 'profile' aus, da das Backend dies automatisch setzt
-        base_fields = self._extract_fields_from_model(Activity, exclude_fields=['profile'])
-
-        # 2. Spezifische Zusatzfelder ermitteln
         specific_fields = []
         target_model = type_to_model.get(activity_type)
 
         if target_model:
-            # 'activity_ptr' ist der interne Name der Vererbung bei Django, den filtern wir aus
             specific_fields = self._extract_fields_from_model(target_model, exclude_fields=['activity_ptr'])
 
-        # 3. Zusammenführen und zurückgeben
         return Response({
             'type': activity_type,
             'fields': base_fields + specific_fields
         })
 
+
 class DailyMetricViewSet(viewsets.ModelViewSet):
-    queryset = DailyMetric.objects.all()
+    """
+    Sichert die täglichen Gesundheitswerte ab, sodass Athleten 
+    niemals gegenseitig ihre Daten einsehen können.
+    """
     serializer_class = DailyMetricSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        # KORREKTUR: Absicherung gegen unbefugten Datenzugriff
+        return DailyMetric.objects.filter(profile__user=self.request.user)
+
+    def perform_create(self, serializer):
+        profile = Profile.objects.get(user=self.request.user)
+        serializer.save(profile=profile)

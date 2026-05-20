@@ -3,13 +3,13 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert,
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 
-// 1. TYP-DEFINITION ERWEITERT (Passend zum Backend-Meta-API)
+// 1. TYP-DEFINITION AN BACKEND-CHOICES ANGEPASST
 interface FormField {
   name: string;
   label: string;
   type: 'text' | 'number' | 'date' | 'time' | 'boolean' | 'select' | 'textarea';
   required: boolean;
-  options?: string[][] | [string, string][]; // Für Select-Felder vom Backend
+  options?: { value: string | number; label: string }[]; // Array aus Objekten vom neuen Backend-Schema
 }
 
 const ACTIVITY_TYPES = ['training', 'competition', 'responsibility', 'recovery', 'other'];
@@ -17,9 +17,9 @@ const ACTIVITY_TYPES = ['training', 'competition', 'responsibility', 'recovery',
 export default function AddActivityScreen() {
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [schema, setSchema] = useState<FormField[]>([]);
-  const [formData, setFormData] = useState<Record<string, any>>({}); // Typ auf 'any' geändert wegen Booleans
+  const [formData, setFormData] = useState<Record<string, any>>({});
   const [loadingSchema, setLoadingSchema] = useState(false);
-  const [backendErrors, setBackendErrors] = useState<Record<string, string[]>>({}); // Für rote Fehlermeldungen unter den Feldern
+  const [backendErrors, setBackendErrors] = useState<Record<string, string[]>>({});
   const { token } = useAuth();
   const router = useRouter();
 
@@ -29,7 +29,7 @@ export default function AddActivityScreen() {
 
     const fetchSchema = async () => {
       setLoadingSchema(true);
-      setBackendErrors({}); // Fehler zurücksetzen
+      setBackendErrors({});
       try {
         const response = await fetch(`http://127.0.0.1:8000/api/activities/schema/?type=${selectedType}`, {
           headers: { 'Authorization': `Bearer ${token}` }
@@ -39,14 +39,12 @@ export default function AddActivityScreen() {
         
         const data = await response.json();
         
-        // Da das Backend bereits ALLE Felder (inkl. Titel und Datum) liefert,
-        // filtern wir Titel und Datum heraus, da wir sie oben fix rendern.
+        // Filtere 'title' und 'date' heraus, da wir sie oben fest einbauen
         const dynamicFields = (data.fields || []).filter(
           (f: FormField) => f.name !== 'title' && f.name !== 'date'
         );
         setSchema(dynamicFields);
         
-        // Formular-State dynamisch mit den korrekten Typen initialisieren
         const initialData: Record<string, any> = { 
           title: '', 
           date: new Date().toISOString().split('T')[0] 
@@ -54,9 +52,9 @@ export default function AddActivityScreen() {
         
         dynamicFields.forEach((f: FormField) => {
           if (f.type === 'boolean') {
-            initialData[f.name] = false; // Booleans starten als False
+            initialData[f.name] = false;
           } else {
-            initialData[f.name] = ''; // Alles andere als leerer Text
+            initialData[f.name] = ''; // Text, Zahlen und Zeiten starten als leerer String
           }
         });
         setFormData(initialData);
@@ -76,7 +74,6 @@ export default function AddActivityScreen() {
       ...prev,
       [name]: value
     }));
-    // Wenn der Nutzer tippt, löschen wir den spezifischen Backend-Fehler für dieses Feld
     if (backendErrors[name]) {
       setBackendErrors(prev => {
         const copy = { ...prev };
@@ -89,9 +86,28 @@ export default function AddActivityScreen() {
   // 3. DATEN AN DAS BACKEND SENDEN
   const submitData = async () => {
     try {
-      // WICHTIG: Kein 'profile: 1' mehr mitschicken! Das macht die View via Token!
+      // WICHTIG: Leere Werte filtern & Zahlen umwandeln, damit Django nicht meckert
+      const processedData: Record<string, any> = {};
+      
+      Object.keys(formData).forEach(key => {
+        const value = formData[key];
+        const fieldConfig = schema.find(f => f.name === key);
+        
+        if (value === '' || value === null || value === undefined) {
+          // Optionale leere Felder gar nicht erst mitschicken
+          return;
+        }
+        
+        if (fieldConfig && fieldConfig.type === 'number') {
+          // Konvertiert den TextInput-String in eine echte Zahl
+          processedData[key] = value.includes('.') ? parseFloat(value) : parseInt(value, 10);
+        } else {
+          processedData[key] = value;
+        }
+      });
+
       const payload = {
-        ...formData,
+        ...processedData,
         activity_type: selectedType,
       };
 
@@ -109,9 +125,6 @@ export default function AddActivityScreen() {
         router.replace('/(tabs)/activities');
       } else {
         const errorData = await response.json();
-        
-        
-        // Wir speichern die Fehlermeldungen im State, um sie direkt unter den Inputs anzuzeigen
         setBackendErrors(errorData);
         Alert.alert("Validierungsfehler", "Bitte korrigiere die rot markierten Felder.");
       }
@@ -121,14 +134,11 @@ export default function AddActivityScreen() {
   };
 
   const validateAndSave = () => {
-
     if (!formData.title || !formData.date) {
-      
       Alert.alert("Fehler", "Titel und Datum müssen ausgefüllt sein.");
       return;
     }
 
-    // Lokale Prüfung vor dem Absenden
     const missingFields = schema.filter(f => f.required && !formData[f.name] && formData[f.name] !== false);
 
     if (missingFields.length > 0) {
@@ -143,7 +153,6 @@ export default function AddActivityScreen() {
 
   // --- UI RENDERING ---
 
-  // Phase 1: Kategorie-Auswahl
   if (!selectedType) {
     return (
       <View style={styles.container}>
@@ -157,14 +166,12 @@ export default function AddActivityScreen() {
     );
   }
 
-  // Phase 2: Laden
   if (loadingSchema) {
     return (
       <View style={styles.center}><ActivityIndicator size="large" color="#007AFF" /></View>
     );
   }
 
-  // Phase 3: Dynamisches Formular
   return (
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <Text style={styles.title}>{selectedType.toUpperCase()}</Text>
@@ -192,7 +199,7 @@ export default function AddActivityScreen() {
       {schema.map(field => {
         const hasError = !!backendErrors[field.name];
 
-        // FALL A: BOOTLEAN (Ganztägig Schalter)
+        // FALL A: BOOLEAN
         if (field.type === 'boolean') {
           return (
             <View key={field.name} style={styles.switchContainer}>
@@ -205,25 +212,22 @@ export default function AddActivityScreen() {
           );
         }
 
-        // FALL B: SELECT (Planungstyp, Wochentag, Intensität etc.)
+        // FALL B: SELECT (Hier greift jetzt das neue Objekt-Mapping des Backends!)
         if (field.type === 'select' && field.options) {
           return (
             <View key={field.name} style={styles.fieldBlock}>
               <Text style={styles.label}>{field.label} {field.required ? '*' : ''}</Text>
               <View style={styles.selectRow}>
-                {field.options.map((opt: any) => {
-                  // Django Choices liefern entweder [Wert, Label] oder nur Strings
-                  const val = Array.isArray(opt) ? opt[0] : opt;
-                  const display = Array.isArray(opt) ? opt[1] : opt;
-                  const isSelected = formData[field.name] === val;
+                {field.options.map((opt) => {
+                  const isSelected = formData[field.name] === opt.value;
 
                   return (
                     <TouchableOpacity 
-                      key={val} 
+                      key={opt.value.toString()} 
                       style={[styles.optionBadge, isSelected && styles.optionBadgeSelected]}
-                      onPress={() => handleInputChange(field.name, val)}
+                      onPress={() => handleInputChange(field.name, opt.value)}
                     >
-                      <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>{display}</Text>
+                      <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>{opt.label}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -233,7 +237,7 @@ export default function AddActivityScreen() {
           );
         }
 
-        // FALL C: TEXTAREA (Deine neuen Notizen für 'other' oder Wettkampf-Ergebnis)
+        // FALL C: TEXTAREA
         if (field.type === 'textarea') {
           return (
             <View key={field.name} style={styles.fieldBlock}>
@@ -259,7 +263,7 @@ export default function AddActivityScreen() {
               style={[styles.input, hasError && styles.inputError]}
               placeholder={field.type === 'time' ? 'z.B. 14:30' : field.label}
               keyboardType={field.type === 'number' ? 'numeric' : 'default'}
-              value={formData[field.name]}
+              value={formData[field.name]?.toString() || ''} // Verhindert Fehler, wenn Zahlen gelöscht werden
               onChangeText={(v) => handleInputChange(field.name, v)}
             />
             {hasError && <Text style={styles.errorText}>{backendErrors[field.name].join(', ')}</Text>}
@@ -292,12 +296,12 @@ const styles = StyleSheet.create({
   errorText: { color: '#ff3b30', fontSize: 12, marginTop: -12, marginBottom: 15, marginLeft: 5 },
   textArea: { height: 100, textAlignVertical: 'top' },
   switchContainer: { 
-  flexDirection: 'row', 
-  justifyContent: 'space-between', // <-- Geändert zu 'space-between'
-  alignItems: 'center', 
-  marginBottom: 20, 
-  paddingVertical: 5 
-},
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    marginBottom: 20, 
+    paddingVertical: 5 
+  },
   selectRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 15, gap: 8 },
   optionBadge: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: '#eee' },
   optionBadgeSelected: { backgroundColor: '#007AFF' },
@@ -307,161 +311,3 @@ const styles = StyleSheet.create({
   saveButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
   cancelText: { textAlign: 'center', color: '#ff3b30', marginTop: 20, marginBottom: 60 }
 });
-
-
-
-/*
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
-import { useRouter } from 'expo-router';
-import { useAuth } from '../../context/AuthContext';
-
-// Typ-Definition für ein Formularfeld vom Backend
-interface FormField {
-  name: string;
-  label: string;
-  type: 'text' | 'number' | 'date';
-  required: boolean;
-}
-
-const ACTIVITY_TYPES = ['training', 'competition', 'responsibility', 'recovery', 'other'];
-
-export default function AddActivityScreen() {
-  const [selectedType, setSelectedType] = useState<string | null>(null);
-  const [schema, setSchema] = useState<FormField[]>([]);
-  const [formData, setFormData] = useState<Record<string, string>>({});
-  const [loadingSchema, setLoadingSchema] = useState(false);
-  const { token } = useAuth();
-  const router = useRouter();
-
-  // 1. Schema laden (angepasste URL)
-useEffect(() => {
-  if (!selectedType) return;
-
-  const fetchSchema = async () => {
-    setLoadingSchema(true);
-    try {
-      // Die URL wurde an das Django-ViewSet angepasst
-      const response = await fetch(`http://127.0.0.1:8000/api/activities/schema/?type=${selectedType}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (!response.ok) throw new Error("Fehler beim Laden");
-      
-      const data = await response.json();
-      setSchema(data.fields || []);
-      
-      // WICHTIG: Hier initialisieren wir formData mit leeren Werten
-      // Wir behalten title und date bei, fügen aber die neuen Felder hinzu
-      const initialData: Record<string, string> = { 
-        title: '', 
-        date: new Date().toISOString().split('T')[0] 
-      };
-      
-      data.fields.forEach((f: any) => {
-        initialData[f.name] = '';
-      });
-      setFormData(initialData);
-    } catch (error) {
-      console.error("Schema konnte nicht geladen werden", error);
-      setSchema([]);
-    } finally {
-      setLoadingSchema(false);
-    }
-  };
-
-  fetchSchema();
-}, [selectedType, token]);
-
-// Diese Funktion muss innerhalb deiner AddActivityScreen Komponente stehen
-const handleInputChange = (name: string, value: string) => {
-  setFormData(prev => ({
-    ...prev,
-    [name]: value
-  }));
-};
-
-// 2. Daten speichern (Flache Struktur & activity_type)
-const submitData = async () => {
-  try {
-    // Wir bauen das Objekt so zusammen, wie der neue Serializer es erwartet
-    const payload = {
-      ...formData,
-      activity_type: selectedType, // 'training', 'recovery', etc.
-      profile: 1, // Temporär: Hier sollte eigentlich die ID des User-Profils stehen!
-    };
-
-    const response = await fetch('http://127.0.0.1:8000/api/activities/', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (response.ok) {
-      Alert.alert("Erfolg", "Aktivität gespeichert!");
-      router.replace('/(tabs)/activities');
-    } else {
-      const errorData = await response.json();
-      console.log("Backend-Fehler:", errorData);
-      Alert.alert("Fehler", "Prüfe deine Eingaben.");
-    }
-  } catch (error) {
-    Alert.alert("Fehler", "Server nicht erreichbar.");
-  }
-};
-
-  const validateAndSave = () => {
-    // Basis-Validierung (Titel & Datum sind Pflicht)
-    if (!formData.title || !formData.date) {
-      Alert.alert("Fehler", "Titel und Datum müssen ausgefüllt sein.");
-      return;
-    }
-
-    // Dynamische Validierung basierend auf Schema
-    const missingFields = schema.filter(f => f.required && !formData[f.name]);
-
-    if (missingFields.length > 0) {
-      Alert.alert(
-        "Unvollständig",
-        `Folgende Felder fehlen: ${missingFields.map(f => f.label).join(', ')}`,
-        [
-          { text: "Bearbeiten", style: "cancel" },
-          { text: "Trotzdem speichern", onPress: submitData }
-        ]
-      );
-    } else {
-      submitData();
-    }
-  };
-
-  // --- RENDERING ---
-
-  // Phase 1: Auswahl des Typs
-  if (!selectedType) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Kategorie wählen</Text>
-        {ACTIVITY_TYPES.map(type => (
-          <TouchableOpacity key={type} style={styles.typeButton} onPress={() => setSelectedType(type)}>
-            <Text style={styles.typeButtonText}>{type.toUpperCase()}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    );
-  }
-
-  // Phase 2: Laden des Schemas
-  if (loadingSchema) {
-    return (
-      <View style={styles.center}><ActivityIndicator size="large" color="#007AFF" /></View>
-    );
-  }
-
-  // Phase 3: Das dynamische Formular
-  return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.title}>{selectedType.toUpperCase()}</Text> */
-     

@@ -5,8 +5,7 @@ from .models import (
     Recovery, Competition, DailyMetric
 )
 
-# --- Spezial-Serializer ---
-
+# --- Spezial-Serializer (Bleiben unverändert, super!) ---
 class TrainingSerializer(serializers.ModelSerializer):
     class Meta:
         model = Training
@@ -30,18 +29,17 @@ class CompetitionSerializer(serializers.ModelSerializer):
 class OtherActivitySerializer(serializers.ModelSerializer):
     class Meta:
         model = OtherActivity
-        fields = ['notes']  # Das Freitextfeld für Notizen
+        fields = ['notes']
 
 class DailyMetricSerializer(serializers.ModelSerializer):
     class Meta:
         model = DailyMetric
         fields = '__all__'
 
-# --- Der zentrale ActivitySerializer ---
 
+# --- Der zentrale ActivitySerializer (Anpassung für die Unterklassen-Validierung) ---
 class ActivitySerializer(serializers.ModelSerializer):
     extra_details = serializers.SerializerMethodField(read_only=True)
-    # Das Hilfsfeld für das Frontend, um den Typ beim Erstellen mitzugeben
     activity_type = serializers.CharField(write_only=True, required=False)
 
     class Meta:
@@ -52,14 +50,10 @@ class ActivitySerializer(serializers.ModelSerializer):
             'start_time', 'end_time', 'extra_details', 'activity_type'
         ]
         extra_kwargs = {
-            'profile': {'required': False}  # Wird automatisch in der View über das User-Token gesetzt
+            'profile': {'required': False}  # Wird in der View über das Token gesetzt
         }
 
     def get_extra_details(self, obj):
-        """
-        Übersetzt die One-to-One-Relation der Django-Vererbung 
-        in die jeweiligen Zusatzdaten für das Frontend.
-        """
         if hasattr(obj, 'training'):
             return TrainingSerializer(obj.training).data
         if hasattr(obj, 'responsibility'):
@@ -68,37 +62,52 @@ class ActivitySerializer(serializers.ModelSerializer):
             return RecoverySerializer(obj.recovery).data
         if hasattr(obj, 'competition'):
             return CompetitionSerializer(obj.competition).data
-        if hasattr(obj, 'otheractivity'):  # <-- HIER ERGÄNZT
+        if hasattr(obj, 'otheractivity'):
             return OtherActivitySerializer(obj.otheractivity).data
         return None
 
     def validate(self, attrs):
         """
-        Triggert die 'clean()'-Logik aus models.py, damit Pflichtfelder 
-        (wie weekday bei WEEKLY oder start_time/end_time) bereits beim
-        API-Eingang ordentlich geprüft werden.
+        Triggert die 'clean()'-Logik aus models.py auf der KORREKTEN Unterklasse.
+        Füllt automatische Standardwerte (wie das heutige Datum) direkt in den Serializer ab.
         """
-        # Kopie erstellen und das schreibgeschützte Hilfsfeld temporär entfernen
         attrs_copy = attrs.copy()
-        attrs_copy.pop('activity_type', None)
+        activity_type = attrs_copy.pop('activity_type', None)
         
-        # Ein virtuelles Modell-Objekt erstellen (noch nicht speichern!)
-        instance = Activity(**attrs_copy)
+        # Mapping: Welcher 'activity_type' gehört zu welchem Django-Modell Klasse?
+        model_mapping = {
+            'training': Training,
+            'responsibility': Responsibility,
+            'recovery': Recovery,
+            'competition': Competition,
+            'other': OtherActivity,
+        }
+        
+        # Bestimme das Zielmodell (Nutze Basis-Activity als Fallback)
+        TargetModel = model_mapping.get(activity_type, Activity)
+        
+        # Erstelle eine temporäre Instanz des exakten Modells
+        instance = TargetModel(**attrs_copy)
         
         try:
-            # Die Modell-eigene Validierungslogik ausführen
+            # Jetzt läuft clean() im Kontext des richtigen Modells!
             instance.clean()
         except DjangoValidationError as e:
-            # Eventuelle Django-Validierungsfehler in DRF-Fehler (400 Bad Request) umwandeln
             raise serializers.ValidationError(e.message_dict)
+            
+        # WICHTIG: Da clean() bei DAILY/WEEKLY das Datum automatisch auf heute 
+        # setzt, müssen wir dieses von der Modell-Instanz zurück in den Serializer schreiben!
+        if instance.date and not attrs.get('date'):
+            attrs['date'] = instance.date
             
         return attrs
 
     def create(self, validated_data):
-        # 1. Den Typ aus den Daten extrahieren
+        # Den Typ aus den Daten extrahieren
         activity_type = validated_data.pop('activity_type', None)
         
-        # 2. Daten an das jeweils richtige (Unter-)Modell weiterleiten
+        # Da wir nun das vom Modell in clean() generierte Datum in validated_data haben,
+        # wird es hier perfekt mit in die Tabellen geschrieben.
         if activity_type == 'training':
             return Training.objects.create(**validated_data)
         elif activity_type == 'responsibility':
@@ -110,5 +119,4 @@ class ActivitySerializer(serializers.ModelSerializer):
         elif activity_type == 'other':
             return OtherActivity.objects.create(**validated_data)
         
-        # Fallback: Nur eine Basis-Activity erstellen
         return Activity.objects.create(**validated_data)

@@ -106,9 +106,8 @@ class ActivityViewSet(viewsets.ModelViewSet):
             'recovery': Recovery,
             'other': OtherActivity,
         }
-        # ÄNDERUNG IN VIEWS.PY (in der schema-Methode):
-# Wir filtern 'profile', 'title' UND 'date' direkt bei der Generierung heraus!
-        base_fields = self._extract_fields_from_model(Activity, exclude_fields=['profile', 'title', 'date'])
+
+        base_fields = self._extract_fields_from_model(Activity, exclude_fields=['profile'])
 
         specific_fields = []
         target_model = type_to_model.get(activity_type)

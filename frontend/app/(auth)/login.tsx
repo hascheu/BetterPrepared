@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
+import { useRouter } from 'expo-router'; 
 
 export default function LoginScreen() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const router = useRouter();
   
   const { signIn } = useAuth();
 
@@ -19,7 +21,7 @@ export default function LoginScreen() {
 
     try {
       // 1. Anfrage an dein Django-Backend
-      const response = await fetch('http://127.0.0.1:8000/api/token/', {
+      const response = await fetch('http://127.0.0.1:8000/api/users/login/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -77,6 +79,11 @@ export default function LoginScreen() {
           <Text style={styles.buttonText}>Login</Text>
         )}
       </TouchableOpacity>
+
+      <TouchableOpacity onPress={() => router.push('/(auth)/register')} style={{ marginTop: 20, alignItems: 'center' }}>
+        <Text style={{ color: '#007AFF', fontSize: 16 }}>Noch kein Konto? Hier registrieren</Text>
+      </TouchableOpacity>
+   
     </View>
   );
 }

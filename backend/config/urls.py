@@ -1,17 +1,13 @@
+# backend/config/urls.py
 from django.contrib import admin
 from django.urls import path, include
-from rest_framework_simplejwt.views import (
-    TokenObtainPairView,
-    TokenRefreshView,
-)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     
-    # Authentifizierung (direkt hier)
-    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
-    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    # Alles was mit Users zu tun hat (Register, Login, Refresh) wird hierhin delegiert:
+    path('api/users/', include('users.urls')), 
     
-    # Deine App-Logik (Delegation an activities/urls.py)
+    # Deine Sport-App-Logik
     path('api/', include('activities.urls')), 
 ]

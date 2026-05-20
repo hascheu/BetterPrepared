@@ -1,15 +1,12 @@
+# backend/activities/admin.py
 from django.contrib import admin
 from .models import (
-    Profile, Activity, Training, Responsibility, 
+    Activity, Training, Responsibility, 
     Recovery, Competition, DailyMetric
 )
 
 # Wir registrieren hier jedes Modell einzeln. 
 # Das erzeugt separate Menüpunkte im Admin-Panel.
-
-@admin.register(Profile)
-class ProfileAdmin(admin.ModelAdmin):
-    list_display = ('user', 'sport_type', 'status')
 
 @admin.register(Activity)
 class ActivityAdmin(admin.ModelAdmin):

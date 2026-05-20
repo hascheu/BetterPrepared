@@ -3,13 +3,13 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db import models
-
+from users.models import Profile  
 from .models import (
-    Profile, Activity, Training, Responsibility, 
+    Activity, Training, Responsibility, 
     Recovery, Competition, DailyMetric, OtherActivity
 )
 from .serializers import (
-    ProfileSerializer, ActivitySerializer, TrainingSerializer, 
+    ActivitySerializer, TrainingSerializer, 
     ResponsibilitySerializer, RecoverySerializer, 
     CompetitionSerializer, DailyMetricSerializer, OtherActivitySerializer
 )
@@ -125,10 +125,6 @@ class ActivityViewSet(viewsets.ModelViewSet):
             'type': activity_type,
             'fields': base_fields + specific_fields
         })
-    
-class ProfileViewSet(viewsets.ModelViewSet):
-    queryset = Profile.objects.all()
-    serializer_class = ProfileSerializer
 
 class DailyMetricViewSet(viewsets.ModelViewSet):
     queryset = DailyMetric.objects.all()

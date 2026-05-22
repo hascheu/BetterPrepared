@@ -289,18 +289,20 @@ export default function AddActivityScreen() {
             {flexibleSlots.map((slot, index) => (
               <View key={index} style={styles.slotRowContainer}>
                 
+                
+
                 {/* 1. Einmalig -> Datum + Uhrzeit pro Slot */}
                 {frequency === 'once' && (
                   <View style={styles.row}>
                     <TextInput 
                       style={[styles.input, { flex: 2, marginRight: 8 }]} 
-                      value={slot.date} 
+                      value={slot.date || ''} // <--- HIER: Absicherung mit || ''
                       onChangeText={(v) => updateFlexibleSlot(index, 'date', v)}
                       placeholder="YYYY-MM-DD *"
                     />
                     <TextInput 
                       style={[styles.input, { flex: 1 }]} 
-                      value={slot.time} 
+                      value={slot.time || ''} // <--- HIER: Absicherung mit || ''
                       onChangeText={(v) => updateFlexibleSlot(index, 'time', v)}
                       placeholder="hh:mm *"
                     />
@@ -311,7 +313,7 @@ export default function AddActivityScreen() {
                 {frequency === 'daily' && (
                   <TextInput 
                     style={styles.input} 
-                    value={slot.time} 
+                    value={slot.time || ''} // <--- HIER: Absicherung mit || ''
                     onChangeText={(v) => updateFlexibleSlot(index, 'time', v)}
                     placeholder={`Uhrzeit Option ${index + 1} (z.B. 14:30) *`}
                   />
@@ -333,7 +335,7 @@ export default function AddActivityScreen() {
                     </View>
                     <TextInput 
                       style={[styles.input, { flex: 1 }]} 
-                      value={slot.time} 
+                      value={slot.time || ''} // <--- HIER: Absicherung mit || ''
                       onChangeText={(v) => updateFlexibleSlot(index, 'time', v)}
                       placeholder="hh:mm *"
                     />

@@ -32,16 +32,13 @@ class ActivityViewSet(viewsets.ModelViewSet):
             'competition',
             'otheractivity'
         )
-    
     def perform_create(self, serializer):
         # 1. Profil des aktuell eingeloggten Users holen
         profile = Profile.objects.get(user=self.request.user)
         
-        # 2. Alle Daten, die das Frontend geschickt hat (auch die dynamischen!), abfangen
-        raw_data = self.request.data
-        
-        # 3. Das Profil in die Validierungsdaten injizieren und mitspeichern
-        serializer.save(profile=profile, **raw_data)
+        # 2. Das Profil injizieren und mitspeichern. 
+        # Da wir im ViewSet sind, hat der Serializer automatisch Zugriff auf self.request über den Context!
+        serializer.save(profile=profile)
     
     def _get_field_type(self, django_field):
         """Hilfsfunktion: Übersetzt Django-Feldtypen in Frontend-Typen"""

@@ -3,41 +3,12 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert,
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 
-interface FormField {
-  name: string;
-  label: string;
-  type: 'text' | 'number' | 'date' | 'time' | 'boolean' | 'select' | 'textarea';
-  required: boolean;
-  options?: { value: string | number; label: string }[];
-}
-
-const ACTIVITY_TYPES = ['training', 'competition', 'responsibility', 'recovery', 'other'];
-
-const SCHEDULING_TYPES = [
-  { value: 'fixed', label: 'Fixed (Fester Termin)' },
-  { value: 'flexible', label: 'Flexible (Mehrere Optionen)' },
-  { value: 'free', label: 'Free (Keine Vorgabe)' },
-  { value: 'optional', label: 'Optional (Wenn es passt)' },
-];
-
-const FREQUENCIES = [
-  { value: 'once', label: 'Einmalig' },
-  { value: 'daily', label: 'Täglich' },
-  { value: 'weekly', label: 'Wöchentlich' },
-];
-
-const WEEKDAYS = [
-  { value: 'MON', label: 'Mo' }, { value: 'TUE', label: 'Di' }, 
-  { value: 'WED', label: 'Mi' }, { value: 'THU', label: 'Do' }, 
-  { value: 'FRI', label: 'Fr' }, { value: 'SAT', label: 'Sa' }, { value: 'SUN', label: 'So' }
-];
-
-// Interface für die komplexen flexiblen Slots
-interface FlexibleSlot {
-  date?: string;
-  time: string;
-  weekday?: string;
-}
+// Importe der ausgelagerten Daten und Sub-Komponenten
+import { ACTIVITY_TYPES, SCHEDULING_TYPES, FREQUENCIES, WEEKDAYS, FormField, FlexibleSlot } from '../../constants/activityOptions';
+import { FixedSchedulingFields } from '../../components/FixedSchedulingFields';
+import { FlexibleSchedulingFields } from '../../components/FlexibleSchedulingFields';
+import { DynamicDetailsFields } from '../../components/DynamicDetailsFields'; 
+import { styles } from '../../styles/activityStyles'; // Optional: Auch Styles lassen sich auslagern!
 
 export default function AddActivityScreen() {
   const { token } = useAuth();

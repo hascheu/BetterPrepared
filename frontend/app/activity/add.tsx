@@ -5,10 +5,10 @@ import { useAuth } from '../../context/AuthContext';
 
 // Importe der ausgelagerten Daten und Sub-Komponenten
 import { ACTIVITY_TYPES, SCHEDULING_TYPES, FREQUENCIES, WEEKDAYS, FormField, FlexibleSlot } from '../../constants/activityOptions';
-import { FixedSchedulingFields } from '../../components/FixedSchedulingFields';
-import { FlexibleSchedulingFields } from '../../components/FlexibleSchedulingFields';
-import { DynamicDetailsFields } from '../../components/DynamicDetailsFields'; 
-import { styles } from '../../styles/activityStyles'; // Optional: Auch Styles lassen sich auslagern!
+import { FixedSchedulingFields } from '../../components/activity/FixedSchedulingFields';
+import { FlexibleSchedulingFields } from '../../components/activity/FlexibleSchedulingFields';
+import { DynamicDetailsFields } from '../../components/activity/DynamicDetailsFields'; 
+import { styles } from '../../styles/activityStyles';
 
 export default function AddActivityScreen() {
   const { token } = useAuth();
@@ -19,8 +19,8 @@ export default function AddActivityScreen() {
   
   // STATISCHE DATEN (Scheduling)
   const [title, setTitle] = useState('');
-  const [schedulingType, setSchedulingType] = useState('fixed');
-  const [frequency, setFrequency] = useState('once');
+  const [schedulingType, setSchedulingType] = useState('FIXED');
+  const [frequency, setFrequency] = useState('ONCE');
   const [duration, setDuration] = useState('');
   
   // Felder für FIXED
@@ -39,10 +39,10 @@ export default function AddActivityScreen() {
 
   // Setzt die flexiblen Slots zurück, wenn sich der Typ oder die Frequenz ändert
   useEffect(() => {
-    if (schedulingType === 'flexible') {
-      if (frequency === 'once') setFlexibleSlots([{ date: new Date().toISOString().split('T')[0], time: '' }]);
-      if (frequency === 'daily') setFlexibleSlots([{ time: '' }]);
-      if (frequency === 'weekly') setFlexibleSlots([{ weekday: 'MON', time: '' }]);
+    if (schedulingType === 'FLEXIBLE') {
+      if (frequency === 'ONCE') setFlexibleSlots([{ date: new Date().toISOString().split('T')[0], time: '' }]);
+      if (frequency === 'DAILY') setFlexibleSlots([{ time: '' }]);
+      if (frequency === 'WEEKLY') setFlexibleSlots([{ weekday: 'MON', time: '' }]);
     }
   }, [schedulingType, frequency]);
 
@@ -108,12 +108,10 @@ export default function AddActivityScreen() {
         scheduling_type: schedulingType,
         frequency,
         duration: parseInt(duration, 10),
-        // Sende zeitliche Parameter passend zur Auswahl
-        date: schedulingType === 'fixed' ? date : (frequency === 'once' ? null : date),
-        time: schedulingType === 'fixed' ? time : null,
-        weekdays: (schedulingType === 'fixed' && frequency === 'weekly') ? selectedWeekdays : [],
-        // Saubere, gefilterte flexible Slots mitsenden
-        flexible_slots: schedulingType === 'flexible' ? flexibleSlots.filter(s => s.time !== '') : [],
+        date: schedulingType === 'FIXED' ? date : (frequency === 'ONCE' ? null : date),
+        time: schedulingType === 'FIXED' ? time : null,
+        weekdays: (schedulingType === 'FIXED' && frequency === 'WEEKLY') ? selectedWeekdays : [],
+        flexible_slots: schedulingType === 'FLEXIBLE' ? flexibleSlots.filter(s => s.time !== '') : [],
         ...processedDynamicData,
       };
 
@@ -126,13 +124,17 @@ export default function AddActivityScreen() {
       if (response.ok) {
         Alert.alert("Erfolg", "Aktivität erfolgreich geplant!");
         router.replace('/(tabs)/activities');
-      } else {
+     } else {
         const errorData = await response.json();
         setBackendErrors(errorData);
+        
+        // HIER NEU: Druckt den Fehler direkt in dein Expo-Terminal!
+       console.log("!!! DJANGO FEHLER-ANTWORT !!!:", JSON.stringify(errorData, null, 2));
         Alert.alert("Fehler", "Bitte überprüfe die Eingaben.");
       }
-    } catch (error) {
-      Alert.alert("Fehler", "Server nicht erreichbar.");
+    } catch (error: any) { // <-- Hier fängt das catch jetzt sauber an
+      console.error("Speicher-Fehler Details:", error);
+      Alert.alert("Fehler", `Es gab ein Problem: ${error.message || 'Unbekannter Fehler'}`);
     }
   };
 
@@ -174,7 +176,7 @@ export default function AddActivityScreen() {
           ))}
         </View>
 
-        {['fixed', 'flexible'].includes(schedulingType) && (
+        {['FIXED', 'FLEXIBLE'].includes(schedulingType) && (
           <>
             <Text style={styles.label}>Häufigkeit</Text>
             <View style={styles.selectRow}>
@@ -191,137 +193,27 @@ export default function AddActivityScreen() {
           </>
         )}
 
-        {/* --- LOGIK A: FIXED TERMINE --- */}
-        {schedulingType === 'fixed' && (
-          <View style={styles.innerCard}>
-            {frequency === 'once' && (
-              <View style={styles.row}>
-                <View style={{ flex: 1, marginRight: 10 }}>
-                  <Text style={styles.label}>Datum (YYYY-MM-DD) *</Text>
-                  <TextInput style={styles.input} value={date} onChangeText={setDate} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Uhrzeit (hh:mm) *</Text>
-                  <TextInput style={styles.input} value={time} onChangeText={setTime} placeholder="10:00" />
-                </View>
-              </View>
-            )}
-
-            {frequency === 'daily' && (
-              <View style={styles.row}>
-                <View style={{ flex: 1, marginRight: 10 }}>
-                  <Text style={styles.label}>Startdatum *</Text>
-                  <TextInput style={styles.input} value={date} onChangeText={setDate} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.label}>Uhrzeit *</Text>
-                  <TextInput style={styles.input} value={time} onChangeText={setTime} placeholder="08:00" />
-                </View>
-              </View>
-            )}
-
-            {frequency === 'weekly' && (
-              <View>
-                <Text style={styles.label}>Wochentage wählen *</Text>
-                <View style={styles.selectRow}>
-                  {WEEKDAYS.map(d => {
-                    const isSelected = selectedWeekdays.includes(d.value);
-                    return (
-                      <TouchableOpacity 
-                        key={d.value} 
-                        style={[styles.weekdayBadge, isSelected && styles.optionBadgeSelected]}
-                        onPress={() => setSelectedWeekdays(prev => prev.includes(d.value) ? prev.filter(w => w !== d.value) : [...prev, d.value])}
-                      >
-                        <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>{d.label}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-                <View style={styles.row}>
-                  <View style={{ flex: 1, marginRight: 10 }}>
-                    <Text style={styles.label}>Startdatum *</Text>
-                    <TextInput style={styles.input} value={date} onChangeText={setDate} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.label}>Uhrzeit *</Text>
-                    <TextInput style={styles.input} value={time} onChangeText={setTime} placeholder="18:30" />
-                  </View>
-                </View>
-              </View>
-            )}
-          </View>
+        {/* --- LOGIK A: FIXED TERMINE (Subkomponente) --- */}
+        {schedulingType === 'FIXED' && (
+          <FixedSchedulingFields
+            frequency={frequency}
+            date={date}
+            setDate={setDate}
+            time={time}
+            setTime={setTime}
+            selectedWeekdays={selectedWeekdays}
+            setSelectedWeekdays={setSelectedWeekdays}
+          />
         )}
 
-        {/* --- LOGIK B: FLEXIBLE OPTIONEN (Deine neue smarte Logik!) --- */}
-        {schedulingType === 'flexible' && (
-          <View style={styles.innerCard}>
-            <Text style={styles.labelHeader}>Mögliche Terminvorschläge für die Umfrage:</Text>
-            
-            {flexibleSlots.map((slot, index) => (
-              <View key={index} style={styles.slotRowContainer}>
-                
-                
-
-                {/* 1. Einmalig -> Datum + Uhrzeit pro Slot */}
-                {frequency === 'once' && (
-                  <View style={styles.row}>
-                    <TextInput 
-                      style={[styles.input, { flex: 2, marginRight: 8 }]} 
-                      value={slot.date || ''} // <--- HIER: Absicherung mit || ''
-                      onChangeText={(v) => updateFlexibleSlot(index, 'date', v)}
-                      placeholder="YYYY-MM-DD *"
-                    />
-                    <TextInput 
-                      style={[styles.input, { flex: 1 }]} 
-                      value={slot.time || ''} // <--- HIER: Absicherung mit || ''
-                      onChangeText={(v) => updateFlexibleSlot(index, 'time', v)}
-                      placeholder="hh:mm *"
-                    />
-                  </View>
-                )}
-
-                {/* 2. Täglich -> Nur Uhrzeiten pro Slot */}
-                {frequency === 'daily' && (
-                  <TextInput 
-                    style={styles.input} 
-                    value={slot.time || ''} // <--- HIER: Absicherung mit || ''
-                    onChangeText={(v) => updateFlexibleSlot(index, 'time', v)}
-                    placeholder={`Uhrzeit Option ${index + 1} (z.B. 14:30) *`}
-                  />
-                )}
-
-                {/* 3. Wöchentlich -> Wochentag-Auswahl + Uhrzeit pro Slot */}
-                {frequency === 'weekly' && (
-                  <View style={styles.row}>
-                    <View style={[styles.inlineSelect, { flex: 1.5, marginRight: 8 }]}>
-                      {WEEKDAYS.map(w => (
-                        <TouchableOpacity 
-                          key={w.value} 
-                          style={[styles.miniWeekdayBadge, slot.weekday === w.value && styles.optionBadgeSelected]}
-                          onPress={() => updateFlexibleSlot(index, 'weekday', w.value)}
-                        >
-                          <Text style={[styles.miniOptionText, slot.weekday === w.value && styles.optionTextSelected]}>{w.label}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                    <TextInput 
-                      style={[styles.input, { flex: 1 }]} 
-                      value={slot.time || ''} // <--- HIER: Absicherung mit || ''
-                      onChangeText={(v) => updateFlexibleSlot(index, 'time', v)}
-                      placeholder="hh:mm *"
-                    />
-                  </View>
-                )}
-              </View>
-            ))}
-
-            <TouchableOpacity 
-              style={styles.addButton} 
-              onPress={() => setFlexibleSlots([...flexibleSlots, frequency === 'once' ? { date: new Date().toISOString().split('T')[0], time: '' } : frequency === 'weekly' ? { weekday: 'MON', time: '' } : { time: '' }])}
-            >
-              <Text style={styles.addButtonText}>+ Option hinzufügen</Text>
-            </TouchableOpacity>
-          </View>
+        {/* --- LOGIK B: FLEXIBLE OPTIONEN (Subkomponente) --- */}
+        {schedulingType === 'FLEXIBLE' && (
+          <FlexibleSchedulingFields
+            frequency={frequency}
+            flexibleSlots={flexibleSlots}
+            setFlexibleSlots={setFlexibleSlots}
+            updateFlexibleSlot={updateFlexibleSlot}
+          />
         )}
       </View>
 
@@ -340,37 +232,15 @@ export default function AddActivityScreen() {
         </View>
       </View>
 
-      {/* ================= SCHRITT 3: DYNAMISCHE DETAILS ================= */}
-      {loadingSchema && <View style={styles.center}><ActivityIndicator size="small" color="#007AFF" /></View>}
-
-      {selectedType && !loadingSchema && schema.length > 0 && (
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>3. Spezifische Details ({selectedType.toUpperCase()})</Text>
-          {schema.map(field => {
-            const hasError = !!backendErrors[field.name];
-            if (field.type === 'boolean') {
-              return (
-                <View key={field.name} style={styles.switchContainer}>
-                  <Text style={styles.label}>{field.label} {field.required ? '*' : ''}</Text>
-                  <Switch value={!!dynamicFormData[field.name]} onValueChange={(v) => handleDynamicInputChange(field.name, v)} />
-                </View>
-              );
-            }
-            return (
-              <View key={field.name} style={styles.fieldBlock}>
-                <Text style={styles.label}>{field.label} {field.required ? '*' : ''}</Text>
-                <TextInput 
-                  style={[styles.input, hasError && styles.inputError]}
-                  placeholder={field.label}
-                  keyboardType={field.type === 'number' ? 'numeric' : 'default'}
-                  value={dynamicFormData[field.name]?.toString() || ''}
-                  onChangeText={(v) => handleDynamicInputChange(field.name, v)}
-                />
-              </View>
-            );
-          })}
-        </View>
-      )}
+      {/* ================= SCHRITT 3: DYNAMISCHE DETAILS (Subkomponente) ================= */}
+      <DynamicDetailsFields
+        selectedType={selectedType}
+        loadingSchema={loadingSchema}
+        schema={schema}
+        dynamicFormData={dynamicFormData}
+        backendErrors={backendErrors}
+        onInputChange={handleDynamicInputChange} // <-- WICHTIG: "onInputChange" muss es heißen!
+      />
 
       {/* SAVE */}
       <TouchableOpacity style={[styles.saveButton, !selectedType && styles.saveButtonDisabled]} onPress={submitData} disabled={!selectedType}>
@@ -380,38 +250,3 @@ export default function AddActivityScreen() {
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 15, backgroundColor: '#f5f5f7' },
-  center: { padding: 20, justifyContent: 'center', alignItems: 'center' },
-  mainTitle: { fontSize: 24, fontWeight: 'bold', marginBottom: 20, marginTop: 10, color: '#1c1c1e', textAlign: 'center' },
-  card: { backgroundColor: '#fff', padding: 16, borderRadius: 14, marginBottom: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2 },
-  innerCard: { backgroundColor: '#f8f8fa', padding: 12, borderRadius: 10, marginTop: 5, marginBottom: 10 },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#007AFF', marginBottom: 15, borderBottomWidth: 1, borderBottomColor: '#f0f0f2', paddingBottom: 6 },
-  fieldBlock: { marginBottom: 10 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  label: { fontSize: 14, color: '#666', marginBottom: 6, fontWeight: '500' },
-  labelHeader: { fontSize: 14, color: '#333', marginBottom: 12, fontWeight: '600' },
-  input: { borderWidth: 1, borderColor: '#e5e5ea', padding: 12, borderRadius: 8, marginBottom: 12, fontSize: 16, backgroundColor: '#fff' },
-  inputError: { borderColor: '#ff3b30', backgroundColor: '#fff9f9' },
-  switchContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  selectRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12, gap: 8 },
-  inlineSelect: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, backgroundColor: '#fff', padding: 6, borderRadius: 8, borderWidth: 1, borderColor: '#e5e5ea', marginBottom: 12 },
-  optionBadge: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, backgroundColor: '#e5e5ea' },
-  optionBadgeSelected: { backgroundColor: '#007AFF' },
-  weekdayBadge: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#e5e5ea', justifyContent: 'center', alignItems: 'center' },
-  miniWeekdayBadge: { paddingHorizontal: 6, paddingVertical: 5, borderRadius: 6, backgroundColor: '#e5e5ea', flex: 1, alignItems: 'center' },
-  optionText: { color: '#333', fontSize: 13, textAlign: 'center' },
-  miniOptionText: { color: '#333', fontSize: 11, fontWeight: '500' },
-  optionTextSelected: { color: '#fff', fontWeight: 'bold' },
-  typeBadge: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10, backgroundColor: '#fff', borderWidth: 1, borderColor: '#007AFF' },
-  typeBadgeSelected: { backgroundColor: '#007AFF' },
-  typeBadgeText: { color: '#007AFF', fontWeight: '600', fontSize: 13 },
-  typeBadgeTextSelected: { color: '#fff' },
-  addButton: { padding: 10, backgroundColor: '#e1f0ff', borderRadius: 8, alignItems: 'center', marginTop: 5 },
-  addButtonText: { color: '#007AFF', fontWeight: '600' },
-  saveButton: { backgroundColor: '#34c759', padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 10, marginBottom: 20 },
-  saveButtonDisabled: { backgroundColor: '#aeaea2' },
-  saveButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  slotRowContainer: { marginBottom: 5 }
-});

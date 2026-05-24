@@ -15,17 +15,19 @@ export interface FlexibleSlot {
 
 export const ACTIVITY_TYPES = ['training', 'competition', 'responsibility', 'recovery', 'other'];
 
+// constants/activityOptions.ts
+
 export const SCHEDULING_TYPES = [
-  { value: 'fixed', label: 'Fixed (Fester Termin)' },
-  { value: 'flexible', label: 'Flexible (Mehrere Optionen)' },
-  { value: 'free', label: 'Free (Keine Vorgabe)' },
-  { value: 'optional', label: 'Optional (Wenn es passt)' },
+  { value: 'FIXED', label: 'Fixed (Fester Termin)' },      // <-- 'FIXED' statt 'fixed'
+  { value: 'FLEXIBLE', label: 'Flexible (Mehrere Optionen)' }, // <-- 'FLEXIBLE' statt 'flexible'
+  { value: 'FREE', label: 'Free (Keine Vorgabe)' },
+  { value: 'OPTIONAL', label: 'Optional (Wenn es passt)' },
 ];
 
 export const FREQUENCIES = [
-  { value: 'once', label: 'Einmalig' },
-  { value: 'daily', label: 'Täglich' },
-  { value: 'weekly', label: 'Wöchentlich' },
+  { value: 'ONCE', label: 'Einmalig' },     // <-- 'ONCE' statt 'once'
+  { value: 'DAILY', label: 'Täglich' },     // <-- 'DAILY' statt 'daily'
+  { value: 'WEEKLY', label: 'Wöchentlich' }, // <-- 'WEEKLY' statt 'weekly'
 ];
 
 export const WEEKDAYS = [

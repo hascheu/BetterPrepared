@@ -23,7 +23,7 @@ export function FlexibleSchedulingFields({
       {flexibleSlots.map((slot, index) => (
         <View key={index} style={styles.slotRowContainer}>
           
-          {/* 1. Einmalig -> Datum + Uhrzeit pro Slot */}
+          {/* 1. Einmalig -> Datum + Uhrzeit pro Slot (Geändert auf Großbuchstaben 'ONCE') */}
           {frequency === 'ONCE' && (
             <View style={styles.row}>
               <TextInput 
@@ -41,7 +41,7 @@ export function FlexibleSchedulingFields({
             </View>
           )}
 
-          {/* 2. Täglich -> Nur Uhrzeiten pro Slot */}
+          {/* 2. Täglich -> Nur Uhrzeiten pro Slot (Geändert auf Großbuchstaben 'DAILY') */}
           {frequency === 'DAILY' && (
             <TextInput 
               style={styles.input} 
@@ -51,7 +51,7 @@ export function FlexibleSchedulingFields({
             />
           )}
 
-          {/* 3. Wöchentlich -> Wochentag-Auswahl + Uhrzeit pro Slot */}
+          {/* 3. Wöchentlich -> Wochentag-Auswahl + Uhrzeit pro Slot (Geändert auf Großbuchstaben 'WEEKLY') */}
           {frequency === 'WEEKLY' && (
             <View style={styles.row}>
               <View style={[styles.inlineSelect, { flex: 1.5, marginRight: 8 }]}>

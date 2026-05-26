@@ -102,16 +102,54 @@ export default function AddActivityScreen() {
         processedDynamicData[key] = fieldConfig?.type === 'number' ? parseFloat(value) : value;
       });
 
+// Hilfsfunktion, um die Endzeit zu berechnen (Startzeit + Dauer)
+      const calculateEndTime = (startTime: string, durationMin: number) => {
+        if (!startTime || !startTime.includes(':')) return startTime;
+        const [hours, minutes] = startTime.split(':').map(Number);
+        const dateObj = new Date();
+        dateObj.setHours(hours, minutes, 0, 0);
+        dateObj.setMinutes(dateObj.getMinutes() + durationMin);
+        return `${String(dateObj.getHours()).padStart(2, '0')}:${String(dateObj.getMinutes()).padStart(2, '0')}`;
+      };
+
+      // Fallback-Wochentag berechnen, falls keiner gewählt ist (z.B. bei ONCE oder DAILY)
+      // Django braucht oft einen gültigen Choice-String wie "MON", "TUE" etc.
+      const getFallbackWeekday = () => {
+        if (selectedWeekdays.length > 0) return selectedWeekdays[0];
+        const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+        return days[new Date(date).getDay()] || 'MON';
+      };
+
       const payload = {
         title,
         activity_type: selectedType,
         scheduling_type: schedulingType,
         frequency,
-        duration: parseInt(duration, 10),
-        date: schedulingType === 'FIXED' ? date : (frequency === 'ONCE' ? null : date),
-        time: schedulingType === 'FIXED' ? time : null,
-        weekdays: (schedulingType === 'FIXED' && frequency === 'WEEKLY') ? selectedWeekdays : [],
-        flexible_slots: schedulingType === 'FLEXIBLE' ? flexibleSlots.filter(s => s.time !== '') : [],
+        duration: parseInt(duration, 10) || 60, // Fallback auf 60 Min, falls leer
+        
+        // 1. FIXED-LOGIK
+        date: date, // Schicke das Datum immer mit
+        
+        // Nutze die eingetippte Zeit. Wenn leer, nimm als Fallback die aktuelle Uhrzeit
+        start_time: schedulingType === 'FIXED' ? (time || "12:00") : "12:00",
+        end_time: schedulingType === 'FIXED' ? calculateEndTime(time || "12:00", parseInt(duration, 10) || 60) : "13:00",
+        
+        // WICHTIG: Schicke IMMER einen Wochentag mit, da Django ihn zwingend fordert!
+        weekday: getFallbackWeekday(),
+        weekdays: selectedWeekdays.length > 0 ? selectedWeekdays : [getFallbackWeekday()],
+        
+        // 2. FLEXIBLE-LOGIK
+        flexible_slots: schedulingType === 'FLEXIBLE' 
+          ? flexibleSlots
+              .filter(s => s.time !== '')
+              .map(s => ({
+                date: s.date || date,
+                weekday: s.weekday || getFallbackWeekday(),
+                start_time: s.time,
+                end_time: calculateEndTime(s.time, parseInt(duration, 10) || 60)
+              }))
+          : [],
+          
         ...processedDynamicData,
       };
 

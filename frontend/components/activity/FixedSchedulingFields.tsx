@@ -6,11 +6,11 @@ import { styles } from '../../styles/activityStyles';
 interface FixedSchedulingFieldsProps {
   frequency: string;
   date: string;
-  setDate: (date: string) => void;
+  setDate: (d: string) => void;
   time: string;
-  setTime: (time: string) => void;
+  setTime: (t: string) => void;
   selectedWeekdays: string[];
-  setSelectedWeekdays: React.Dispatch<React.SetStateAction<string[]>>;
+  setSelectedWeekdays: (w: string[] | ((prev: string[]) => string[])) => void; // Erlaubt funktionales Update
 }
 
 export function FixedSchedulingFields({
@@ -22,60 +22,61 @@ export function FixedSchedulingFields({
   selectedWeekdays,
   setSelectedWeekdays,
 }: FixedSchedulingFieldsProps) {
+
+  // Hilfsfunktion für die Wochentag-Auswahl
+  const toggleWeekday = (code: string) => {
+    if (selectedWeekdays.includes(code)) {
+      setSelectedWeekdays(selectedWeekdays.filter(item => item !== code));
+    } else {
+      setSelectedWeekdays([...selectedWeekdays, code]);
+    }
+  };
+
   return (
-    <View style={styles.innerCard}>
+    <View style={{ marginTop: 10 }}>
+      {/* 1. DATUM (wird nur bei einmaligen Terminen gebraucht) */}
       {frequency === 'ONCE' && (
-        <View style={styles.row}>
-          <View style={{ flex: 1, marginRight: 10 }}>
-            <Text style={styles.label}>Datum (YYYY-MM-DD) *</Text>
-            <TextInput style={styles.input} value={date} onChangeText={setDate} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Uhrzeit (hh:mm) *</Text>
-            <TextInput style={styles.input} value={time} onChangeText={setTime} placeholder="10:00" />
-          </View>
+        <View style={styles.fieldBlock}>
+          <Text style={styles.label}>Datum (YYYY-MM-DD) *</Text>
+          <TextInput
+            style={styles.input}
+            value={date}
+            onChangeText={setDate} // Schreibt den Wert zurück in die add.tsx
+            placeholder="z.B. 2026-05-24"
+          />
         </View>
       )}
 
-      {frequency === 'DAILY' && (
-        <View style={styles.row}>
-          <View style={{ flex: 1, marginRight: 10 }}>
-            <Text style={styles.label}>Startdatum *</Text>
-            <TextInput style={styles.input} value={date} onChangeText={setDate} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Uhrzeit *</Text>
-            <TextInput style={styles.input} value={time} onChangeText={setTime} placeholder="08:00" />
-          </View>
-        </View>
-      )}
+      {/* 2. UHRZEIT (Wird IMMER gebraucht) */}
+      <View style={styles.fieldBlock}>
+        <Text style={styles.label}>Start-Uhrzeit (HH:MM) *</Text>
+        <TextInput
+          style={styles.input}
+          value={time}
+          onChangeText={setTime} // WICHTIG: Schreibt den Wert direkt in die add.tsx zurück!
+          placeholder="z.B. 14:30"
+        />
+      </View>
 
+      {/* 3. WOCHENTAGE (wird nur bei wöchentlicher Frequenz gebraucht) */}
       {frequency === 'WEEKLY' && (
-        <View>
-          <Text style={styles.label}>Wochentage wählen *</Text>
+        <View style={styles.fieldBlock}>
+          <Text style={styles.label}>Wochentage auswählen *</Text>
           <View style={styles.selectRow}>
-            {WEEKDAYS.map(d => {
-              const isSelected = selectedWeekdays.includes(d.value);
+            {WEEKDAYS.map(day => {
+              const isSelected = selectedWeekdays.includes(day.value);
               return (
-                <TouchableOpacity 
-                  key={d.value} 
+                <TouchableOpacity
+                  key={day.value}
                   style={[styles.weekdayBadge, isSelected && styles.optionBadgeSelected]}
-                  onPress={() => setSelectedWeekdays(prev => prev.includes(d.value) ? prev.filter(w => w !== d.value) : [...prev, d.value])}
+                  onPress={() => toggleWeekday(day.value)} // Aktualisiert die add.tsx
                 >
-                  <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>{d.label}</Text>
+                  <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>
+                    {day.label}
+                  </Text>
                 </TouchableOpacity>
               );
             })}
-          </View>
-          <View style={styles.row}>
-            <View style={{ flex: 1, marginRight: 10 }}>
-              <Text style={styles.label}>Startdatum *</Text>
-              <TextInput style={styles.input} value={date} onChangeText={setDate} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.label}>Uhrzeit *</Text>
-              <TextInput style={styles.input} value={time} onChangeText={setTime} placeholder="18:30" />
-            </View>
           </View>
         </View>
       )}

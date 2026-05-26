@@ -32,16 +32,13 @@ class ActivityViewSet(viewsets.ModelViewSet):
             'competition',
             'otheractivity'
         )
-    
     def perform_create(self, serializer):
         # 1. Profil des aktuell eingeloggten Users holen
         profile = Profile.objects.get(user=self.request.user)
         
-        # 2. Alle Daten, die das Frontend geschickt hat (auch die dynamischen!), abfangen
-        raw_data = self.request.data
-        
-        # 3. Das Profil in die Validierungsdaten injizieren und mitspeichern
-        serializer.save(profile=profile, **raw_data)
+        # 2. Das Profil injizieren und mitspeichern. 
+        # Da wir im ViewSet sind, hat der Serializer automatisch Zugriff auf self.request über den Context!
+        serializer.save(profile=profile)
     
     def _get_field_type(self, django_field):
         """Hilfsfunktion: Übersetzt Django-Feldtypen in Frontend-Typen"""
@@ -90,11 +87,11 @@ class ActivityViewSet(viewsets.ModelViewSet):
             form_fields.append(field_config)
             
         return form_fields
-
+    
     @action(detail=False, methods=['get'])
     def schema(self, request):
         """
-        Gibt dem Frontend die Struktur vor, welche Felder benötigt werden.
+        Gibt dem Frontend die Struktur vor, welche spezifischen Felder benötigt werden.
         URL: /api/activities/schema/?type=training
         """
         activity_type = request.query_params.get('type', 'other')
@@ -104,22 +101,22 @@ class ActivityViewSet(viewsets.ModelViewSet):
             'competition': Competition,
             'responsibility': Responsibility,
             'recovery': Recovery,
-            'other': OtherActivity,
+            'other': OtherActivity, # Heißt in deinem Modell 'OtherActivity'
         }
 
-        base_fields = self._extract_fields_from_model(Activity, exclude_fields=['profile'])
-
-        specific_fields = []
         target_model = type_to_model.get(activity_type)
+        specific_fields = []
 
         if target_model:
+            # Da _extract_fields_from_model bereits mit 'local_fields' arbeitet,
+            # werden alle geerbten Activity-Felder automatisch ignoriert!
+            # Wir müssen nur die OneToOne-Verknüpfung zur Elternklasse (activity_ptr) ausschließen.
             specific_fields = self._extract_fields_from_model(target_model, exclude_fields=['activity_ptr'])
 
         return Response({
             'type': activity_type,
-            'fields': base_fields + specific_fields
+            'fields': specific_fields  # Schickt NUR noch die reinen Unterklassen-Felder ans Frontend!
         })
-
 
 class DailyMetricViewSet(viewsets.ModelViewSet):
     """

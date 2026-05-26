@@ -3,311 +3,288 @@ import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Alert,
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 
-// 1. TYP-DEFINITION AN BACKEND-CHOICES ANGEPASST
-interface FormField {
-  name: string;
-  label: string;
-  type: 'text' | 'number' | 'date' | 'time' | 'boolean' | 'select' | 'textarea';
-  required: boolean;
-  options?: { value: string | number; label: string }[]; // Array aus Objekten vom neuen Backend-Schema
-}
-
-const ACTIVITY_TYPES = ['training', 'competition', 'responsibility', 'recovery', 'other'];
+// Importe der ausgelagerten Daten und Sub-Komponenten
+import { ACTIVITY_TYPES, SCHEDULING_TYPES, FREQUENCIES, WEEKDAYS, FormField, FlexibleSlot } from '../../constants/activityOptions';
+import { FixedSchedulingFields } from '../../components/activity/FixedSchedulingFields';
+import { FlexibleSchedulingFields } from '../../components/activity/FlexibleSchedulingFields';
+import { DynamicDetailsFields } from '../../components/activity/DynamicDetailsFields'; 
+import { styles } from '../../styles/activityStyles';
 
 export default function AddActivityScreen() {
-  const [selectedType, setSelectedType] = useState<string | null>(null);
-  const [schema, setSchema] = useState<FormField[]>([]);
-  const [formData, setFormData] = useState<Record<string, any>>({});
-  const [loadingSchema, setLoadingSchema] = useState(false);
-  const [backendErrors, setBackendErrors] = useState<Record<string, string[]>>({});
   const { token } = useAuth();
   const router = useRouter();
 
-  // 2. SCHEMA LADEN
+  // STAGE CONTROL
+  const [selectedType, setSelectedType] = useState<string | null>(null);
+  
+  // STATISCHE DATEN (Scheduling)
+  const [title, setTitle] = useState('');
+  const [schedulingType, setSchedulingType] = useState('FIXED');
+  const [frequency, setFrequency] = useState('ONCE');
+  const [duration, setDuration] = useState('');
+  
+  // Felder für FIXED
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [time, setTime] = useState('');
+  const [selectedWeekdays, setSelectedWeekdays] = useState<string[]>([]);
+
+  // Felder für FLEXIBLE (Strukturierte Liste von Optionen)
+  const [flexibleSlots, setFlexibleSlots] = useState<FlexibleSlot[]>([{ time: '' }]);
+
+  // DYNAMISCHE DATEN
+  const [schema, setSchema] = useState<FormField[]>([]);
+  const [loadingSchema, setLoadingSchema] = useState(false);
+  const [dynamicFormData, setDynamicFormData] = useState<Record<string, any>>({});
+  const [backendErrors, setBackendErrors] = useState<Record<string, string[]>>({});
+
+  // Setzt die flexiblen Slots zurück, wenn sich der Typ oder die Frequenz ändert
+  useEffect(() => {
+    if (schedulingType === 'FLEXIBLE') {
+      if (frequency === 'ONCE') setFlexibleSlots([{ date: new Date().toISOString().split('T')[0], time: '' }]);
+      if (frequency === 'DAILY') setFlexibleSlots([{ time: '' }]);
+      if (frequency === 'WEEKLY') setFlexibleSlots([{ weekday: 'MON', time: '' }]);
+    }
+  }, [schedulingType, frequency]);
+
+  // Schema laden
   useEffect(() => {
     if (!selectedType) return;
-
     const fetchSchema = async () => {
       setLoadingSchema(true);
-      setBackendErrors({});
       try {
         const response = await fetch(`http://127.0.0.1:8000/api/activities/schema/?type=${selectedType}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
-        
         if (!response.ok) throw new Error("Fehler beim Laden");
-        
         const data = await response.json();
+        setSchema(data.fields || []);
         
-        // Filtere 'title' und 'date' heraus, da wir sie oben fest einbauen
-        const dynamicFields = (data.fields || []).filter(
-          (f: FormField) => f.name !== 'title' && f.name !== 'date'
-        );
-        setSchema(dynamicFields);
-        
-        const initialData: Record<string, any> = { 
-          title: '', 
-          date: new Date().toISOString().split('T')[0] 
-        };
-        
-        dynamicFields.forEach((f: FormField) => {
-          if (f.type === 'boolean') {
-            initialData[f.name] = false;
-          } else {
-            initialData[f.name] = ''; // Text, Zahlen und Zeiten starten als leerer String
-          }
+        const initialDynamicData: Record<string, any> = {};
+        (data.fields || []).forEach((f: FormField) => {
+          initialDynamicData[f.name] = f.type === 'boolean' ? false : '';
         });
-        setFormData(initialData);
+        setDynamicFormData(initialDynamicData);
       } catch (error) {
-        console.error("Schema konnte nicht geladen werden", error);
-        setSchema([]);
+        console.error(error);
       } finally {
         setLoadingSchema(false);
       }
     };
-
     fetchSchema();
   }, [selectedType, token]);
 
-  const handleInputChange = (name: string, value: any) => {
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }));
-    if (backendErrors[name]) {
-      setBackendErrors(prev => {
-        const copy = { ...prev };
-        delete copy[name];
-        return copy;
-      });
-    }
+  const handleDynamicInputChange = (name: string, value: any) => {
+    setDynamicFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  // 3. DATEN AN DAS BACKEND SENDEN
+  const updateFlexibleSlot = (index: number, key: keyof FlexibleSlot, value: string) => {
+    const updated = [...flexibleSlots];
+    updated[index] = { ...updated[index], [key]: value };
+    setFlexibleSlots(updated);
+  };
+
   const submitData = async () => {
+    if (!title || !duration) {
+      Alert.alert("Fehler", "Bitte fülle alle Pflichtfelder (*) im Scheduling-Block aus.");
+      return;
+    }
+    if (!selectedType) {
+      Alert.alert("Fehler", "Bitte wähle eine Aktivitätsart aus.");
+      return;
+    }
+
     try {
-      // WICHTIG: Leere Werte filtern & Zahlen umwandeln, damit Django nicht meckert
-      const processedData: Record<string, any> = {};
-      
-      Object.keys(formData).forEach(key => {
-        const value = formData[key];
+      const processedDynamicData: Record<string, any> = {};
+      Object.keys(dynamicFormData).forEach(key => {
+        const value = dynamicFormData[key];
         const fieldConfig = schema.find(f => f.name === key);
-        
-        if (value === '' || value === null || value === undefined) {
-          // Optionale leere Felder gar nicht erst mitschicken
-          return;
-        }
-        
-        if (fieldConfig && fieldConfig.type === 'number') {
-          // Konvertiert den TextInput-String in eine echte Zahl
-          processedData[key] = value.includes('.') ? parseFloat(value) : parseInt(value, 10);
-        } else {
-          processedData[key] = value;
-        }
+        if (value === '' || value === null) return;
+        processedDynamicData[key] = fieldConfig?.type === 'number' ? parseFloat(value) : value;
       });
 
+// Hilfsfunktion, um die Endzeit zu berechnen (Startzeit + Dauer)
+      const calculateEndTime = (startTime: string, durationMin: number) => {
+        if (!startTime || !startTime.includes(':')) return startTime;
+        const [hours, minutes] = startTime.split(':').map(Number);
+        const dateObj = new Date();
+        dateObj.setHours(hours, minutes, 0, 0);
+        dateObj.setMinutes(dateObj.getMinutes() + durationMin);
+        return `${String(dateObj.getHours()).padStart(2, '0')}:${String(dateObj.getMinutes()).padStart(2, '0')}`;
+      };
+
+      // Fallback-Wochentag berechnen, falls keiner gewählt ist (z.B. bei ONCE oder DAILY)
+      // Django braucht oft einen gültigen Choice-String wie "MON", "TUE" etc.
+      const getFallbackWeekday = () => {
+        if (selectedWeekdays.length > 0) return selectedWeekdays[0];
+        const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+        return days[new Date(date).getDay()] || 'MON';
+      };
+
       const payload = {
-        ...processedData,
+        title,
         activity_type: selectedType,
+        scheduling_type: schedulingType,
+        frequency,
+        duration: parseInt(duration, 10) || 60, // Fallback auf 60 Min, falls leer
+        
+        // 1. FIXED-LOGIK
+        date: date, // Schicke das Datum immer mit
+        
+        // Nutze die eingetippte Zeit. Wenn leer, nimm als Fallback die aktuelle Uhrzeit
+        start_time: schedulingType === 'FIXED' ? (time || "12:00") : "12:00",
+        end_time: schedulingType === 'FIXED' ? calculateEndTime(time || "12:00", parseInt(duration, 10) || 60) : "13:00",
+        
+        // WICHTIG: Schicke IMMER einen Wochentag mit, da Django ihn zwingend fordert!
+        weekday: getFallbackWeekday(),
+        weekdays: selectedWeekdays.length > 0 ? selectedWeekdays : [getFallbackWeekday()],
+        
+        // 2. FLEXIBLE-LOGIK
+        flexible_slots: schedulingType === 'FLEXIBLE' 
+          ? flexibleSlots
+              .filter(s => s.time !== '')
+              .map(s => ({
+                date: s.date || date,
+                weekday: s.weekday || getFallbackWeekday(),
+                start_time: s.time,
+                end_time: calculateEndTime(s.time, parseInt(duration, 10) || 60)
+              }))
+          : [],
+          
+        ...processedDynamicData,
       };
 
       const response = await fetch('http://127.0.0.1:8000/api/activities/', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(payload)
       });
 
       if (response.ok) {
-        Alert.alert("Erfolg", "Aktivität gespeichert!");
+        Alert.alert("Erfolg", "Aktivität erfolgreich geplant!");
         router.replace('/(tabs)/activities');
-      } else {
+     } else {
         const errorData = await response.json();
         setBackendErrors(errorData);
-        Alert.alert("Validierungsfehler", "Bitte korrigiere die rot markierten Felder.");
+        
+        // HIER NEU: Druckt den Fehler direkt in dein Expo-Terminal!
+       console.log("!!! DJANGO FEHLER-ANTWORT !!!:", JSON.stringify(errorData, null, 2));
+        Alert.alert("Fehler", "Bitte überprüfe die Eingaben.");
       }
-    } catch (error) {
-      Alert.alert("Fehler", "Server nicht erreichbar.");
+    } catch (error: any) { // <-- Hier fängt das catch jetzt sauber an
+      console.error("Speicher-Fehler Details:", error);
+      Alert.alert("Fehler", `Es gab ein Problem: ${error.message || 'Unbekannter Fehler'}`);
     }
   };
-
-  const validateAndSave = () => {
-    if (!formData.title || !formData.date) {
-      Alert.alert("Fehler", "Titel und Datum müssen ausgefüllt sein.");
-      return;
-    }
-
-    const missingFields = schema.filter(f => f.required && !formData[f.name] && formData[f.name] !== false);
-
-    if (missingFields.length > 0) {
-      Alert.alert(
-        "Unvollständig",
-        `Folgende Pflichtfelder fehlen: ${missingFields.map(f => f.label).join(', ')}`
-      );
-    } else {
-      submitData();
-    }
-  };
-
-  // --- UI RENDERING ---
-
-  if (!selectedType) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Kategorie wählen</Text>
-        {ACTIVITY_TYPES.map(type => (
-          <TouchableOpacity key={type} style={styles.typeButton} onPress={() => setSelectedType(type)}>
-            <Text style={styles.typeButtonText}>{type.toUpperCase()}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    );
-  }
-
-  if (loadingSchema) {
-    return (
-      <View style={styles.center}><ActivityIndicator size="large" color="#007AFF" /></View>
-    );
-  }
 
   return (
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
-      <Text style={styles.title}>{selectedType.toUpperCase()}</Text>
+      <Text style={styles.mainTitle}>Neue Aktivität erstellen</Text>
       
-      {/* Fixes Feld: Titel */}
-      <Text style={styles.label}>Titel *</Text>
-      <TextInput 
-        style={[styles.input, backendErrors.title && styles.inputError]} 
-        value={formData.title} 
-        onChangeText={(v) => handleInputChange('title', v)} 
-        placeholder="z.B. Morgenlauf"
+      {/* ================= SCHRITT 1: SCHEDULING ================= */}
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>1. Basis-Infos & Timing</Text>
+        
+        <Text style={styles.label}>Titel der Aktivität *</Text>
+        <TextInput 
+          style={[styles.input, backendErrors.title && styles.inputError]} 
+          value={title} 
+          onChangeText={setTitle} 
+          placeholder="z.B. Ausdauerlauf, Kadersichtung..."
+        />
+
+        <Text style={styles.label}>Geplante Dauer (in Minuten) *</Text>
+        <TextInput 
+          style={styles.input} 
+          keyboardType="numeric" 
+          value={duration} 
+          onChangeText={setDuration}
+          placeholder="z.B. 60"
+        />
+
+        <Text style={styles.label}>Planungs-Art</Text>
+        <View style={styles.selectRow}>
+          {SCHEDULING_TYPES.map(t => (
+            <TouchableOpacity 
+              key={t.value} 
+              style={[styles.optionBadge, schedulingType === t.value && styles.optionBadgeSelected]}
+              onPress={() => setSchedulingType(t.value)}
+            >
+              <Text style={[styles.optionText, schedulingType === t.value && styles.optionTextSelected]}>{t.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {['FIXED', 'FLEXIBLE'].includes(schedulingType) && (
+          <>
+            <Text style={styles.label}>Häufigkeit</Text>
+            <View style={styles.selectRow}>
+              {FREQUENCIES.map(f => (
+                <TouchableOpacity 
+                  key={f.value} 
+                  style={[styles.optionBadge, frequency === f.value && styles.optionBadgeSelected]}
+                  onPress={() => setFrequency(f.value)}
+                >
+                  <Text style={[styles.optionText, frequency === f.value && styles.optionTextSelected]}>{f.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
+
+        {/* --- LOGIK A: FIXED TERMINE (Subkomponente) --- */}
+        {schedulingType === 'FIXED' && (
+          <FixedSchedulingFields
+            frequency={frequency}
+            date={date}
+            setDate={setDate}
+            time={time}
+            setTime={setTime}
+            selectedWeekdays={selectedWeekdays}
+            setSelectedWeekdays={setSelectedWeekdays}
+          />
+        )}
+
+        {/* --- LOGIK B: FLEXIBLE OPTIONEN (Subkomponente) --- */}
+        {schedulingType === 'FLEXIBLE' && (
+          <FlexibleSchedulingFields
+            frequency={frequency}
+            flexibleSlots={flexibleSlots}
+            setFlexibleSlots={setFlexibleSlots}
+            updateFlexibleSlot={updateFlexibleSlot}
+          />
+        )}
+      </View>
+
+      {/* ================= SCHRITT 2: KATEGORIE ================= */}
+      <View style={styles.card}>
+        <Text style={styles.sectionTitle}>2. Kategorie wählen</Text>
+        <View style={styles.selectRow}>
+          {ACTIVITY_TYPES.map(type => {
+            const isSelected = selectedType === type;
+            return (
+              <TouchableOpacity key={type} style={[styles.typeBadge, isSelected && styles.typeBadgeSelected]} onPress={() => setSelectedType(type)}>
+                <Text style={[styles.typeBadgeText, isSelected && styles.typeBadgeTextSelected]}>{type.toUpperCase()}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+
+      {/* ================= SCHRITT 3: DYNAMISCHE DETAILS (Subkomponente) ================= */}
+      <DynamicDetailsFields
+        selectedType={selectedType}
+        loadingSchema={loadingSchema}
+        schema={schema}
+        dynamicFormData={dynamicFormData}
+        backendErrors={backendErrors}
+        onInputChange={handleDynamicInputChange} // <-- WICHTIG: "onInputChange" muss es heißen!
       />
-      {backendErrors.title && <Text style={styles.errorText}>{backendErrors.title.join(', ')}</Text>}
 
-      {/* Fixes Feld: Datum */}
-      <Text style={styles.label}>Datum (YYYY-MM-DD) *</Text>
-      <TextInput 
-        style={[styles.input, backendErrors.date && styles.inputError]} 
-        value={formData.date} 
-        onChangeText={(v) => handleInputChange('date', v)} 
-      />
-      {backendErrors.date && <Text style={styles.errorText}>{backendErrors.date.join(', ')}</Text>}
-
-      {/* DYNAMISCHE FELDER-GENERIERUNG */}
-      {schema.map(field => {
-        const hasError = !!backendErrors[field.name];
-
-        // FALL A: BOOLEAN
-        if (field.type === 'boolean') {
-          return (
-            <View key={field.name} style={styles.switchContainer}>
-              <Text style={styles.label}>{field.label}</Text>
-              <Switch 
-                value={!!formData[field.name]} 
-                onValueChange={(v) => handleInputChange(field.name, v)}
-              />
-            </View>
-          );
-        }
-
-        // FALL B: SELECT (Hier greift jetzt das neue Objekt-Mapping des Backends!)
-        if (field.type === 'select' && field.options) {
-          return (
-            <View key={field.name} style={styles.fieldBlock}>
-              <Text style={styles.label}>{field.label} {field.required ? '*' : ''}</Text>
-              <View style={styles.selectRow}>
-                {field.options.map((opt) => {
-                  const isSelected = formData[field.name] === opt.value;
-
-                  return (
-                    <TouchableOpacity 
-                      key={opt.value.toString()} 
-                      style={[styles.optionBadge, isSelected && styles.optionBadgeSelected]}
-                      onPress={() => handleInputChange(field.name, opt.value)}
-                    >
-                      <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>{opt.label}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-              {hasError && <Text style={styles.errorText}>{backendErrors[field.name].join(', ')}</Text>}
-            </View>
-          );
-        }
-
-        // FALL C: TEXTAREA
-        if (field.type === 'textarea') {
-          return (
-            <View key={field.name} style={styles.fieldBlock}>
-              <Text style={styles.label}>{field.label} {field.required ? '*' : ''}</Text>
-              <TextInput 
-                style={[styles.input, styles.textArea, hasError && styles.inputError]}
-                placeholder={field.label}
-                multiline
-                numberOfLines={4}
-                value={formData[field.name]}
-                onChangeText={(v) => handleInputChange(field.name, v)}
-              />
-              {hasError && <Text style={styles.errorText}>{backendErrors[field.name].join(', ')}</Text>}
-            </View>
-          );
-        }
-
-        // FALL D: STANDARDFELDER (text, number, date, time)
-        return (
-          <View key={field.name} style={styles.fieldBlock}>
-            <Text style={styles.label}>{field.label} {field.required ? '*' : ''}</Text>
-            <TextInput 
-              style={[styles.input, hasError && styles.inputError]}
-              placeholder={field.type === 'time' ? 'z.B. 14:30' : field.label}
-              keyboardType={field.type === 'number' ? 'numeric' : 'default'}
-              value={formData[field.name]?.toString() || ''} // Verhindert Fehler, wenn Zahlen gelöscht werden
-              onChangeText={(v) => handleInputChange(field.name, v)}
-            />
-            {hasError && <Text style={styles.errorText}>{backendErrors[field.name].join(', ')}</Text>}
-          </View>
-        );
-      })}
-
-      {/* Buttons */}
-      <TouchableOpacity style={styles.saveButton} onPress={validateAndSave}>
-        <Text style={styles.saveButtonText}>Speichern</Text>
+      {/* SAVE */}
+      <TouchableOpacity style={[styles.saveButton, !selectedType && styles.saveButtonDisabled]} onPress={submitData} disabled={!selectedType}>
+        <Text style={styles.saveButtonText}>Aktivität final speichern</Text>
       </TouchableOpacity>
-
-      <TouchableOpacity onPress={() => setSelectedType(null)}>
-        <Text style={styles.cancelText}>Abbrechen & Typ ändern</Text>
-      </TouchableOpacity>
+      <View style={{ height: 60 }} />
     </ScrollView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, backgroundColor: '#fff' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  title: { fontSize: 22, fontWeight: 'bold', marginBottom: 25, marginTop: 20, textAlign: 'center' },
-  typeButton: { backgroundColor: '#f0f0f0', padding: 18, borderRadius: 10, marginBottom: 12 },
-  typeButtonText: { textAlign: 'center', fontWeight: '600', color: '#333' },
-  fieldBlock: { marginBottom: 5 },
-  label: { fontSize: 14, color: '#666', marginBottom: 5, fontWeight: '500' },
-  input: { borderWidth: 1, borderColor: '#ddd', padding: 12, borderRadius: 8, marginBottom: 15, fontSize: 16, backgroundColor: '#fafafa' },
-  inputError: { borderColor: '#ff3b30', backgroundColor: '#fff9f9' },
-  errorText: { color: '#ff3b30', fontSize: 12, marginTop: -12, marginBottom: 15, marginLeft: 5 },
-  textArea: { height: 100, textAlignVertical: 'top' },
-  switchContainer: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    marginBottom: 20, 
-    paddingVertical: 5 
-  },
-  selectRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 15, gap: 8 },
-  optionBadge: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, backgroundColor: '#eee' },
-  optionBadgeSelected: { backgroundColor: '#007AFF' },
-  optionText: { color: '#333', fontSize: 13 },
-  optionTextSelected: { color: '#fff', fontWeight: 'bold' },
-  saveButton: { backgroundColor: '#007AFF', padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 15 },
-  saveButtonText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  cancelText: { textAlign: 'center', color: '#ff3b30', marginTop: 20, marginBottom: 60 }
-});

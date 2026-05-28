@@ -1,18 +1,14 @@
+// app/(tabs)/plan.tsx
 import React, { useState, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { Calendar, Timeline, CalendarProvider, WeekCalendar } from 'react-native-calendars';
+import { View, Text, TouchableOpacity } from 'react-native';
 import { useActivities } from '../../hooks/useActivities';
+import { styles } from '../../styles/calendarStyles';
+import { Activity } from '../../types/activity';
 
-interface Activity {
-    id: number;
-    title: string;
-    date: string;
-    start_time?: string;
-    end_time?: string;
-    extra_details?: {
-        training_type?: string;
-    };
-}
+// Neue Views importieren
+import { MonthView } from '../../components/calendar/MonthView';
+import { WeekView } from '../../components/calendar/WeekView';
+import { DayView } from '../../components/calendar/DayView';
 
 type ViewMode = 'Month' | 'Week' | 'Day';
 
@@ -21,38 +17,73 @@ export default function PlanScreen() {
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
     const [viewMode, setViewMode] = useState<ViewMode>('Month');
 
-    // 1. MARKED DATES (For Month & Week dot indicators)
+    // NAVIGATORS
+    const changeDay = (direction: 'prev' | 'next') => {
+        const currentDate = new Date(selectedDate);
+        currentDate.setDate(currentDate.getDate() + (direction === 'next' ? 1 : -1));
+        setSelectedDate(currentDate.toISOString().split('T')[0]);
+    };
+
+    const changeWeek = (direction: 'prev' | 'next') => {
+        const currentDate = new Date(selectedDate);
+        currentDate.setDate(currentDate.getDate() + (direction === 'next' ? 7 : -7));
+        setSelectedDate(currentDate.toISOString().split('T')[0]);
+    };
+
+    // 1. CALENDAR DOTS
     const markedDates = useMemo(() => {
         const marks: Record<string, any> = {};
-        activities.forEach((activity) => {
-            if (activity.date) {
-                marks[activity.date] = { marked: true, dotColor: '#007AFF' };
-            }
+        activities.forEach((act) => {
+            if (act.date) marks[act.date] = { marked: true, dotColor: '#007AFF' };
         });
-        marks[selectedDate] = {
-            ...marks[selectedDate],
-            selected: true,
-            selectedColor: '#007AFF',
-        };
+        marks[selectedDate] = { ...marks[selectedDate], selected: true, selectedColor: '#007AFF' };
         return marks;
     }, [activities, selectedDate]);
 
-    // 2. FILTER ACTIVITIES FOR LIST VIEW (Month & Week)
+    // 2. FILTERED ACTIVITIES
     const filteredActivities = useMemo(() => {
-        return activities.filter(activity => activity.date === selectedDate);
+        return activities.filter(act => act.date === selectedDate);
     }, [activities, selectedDate]);
 
-    // 3. FORMAT EVENTS FOR THE DAY TIMELINE
+    // 3. TIMELINE EVENTS
     const timelineEvents = useMemo(() => {
         return activities
-            .filter(act => act.date === selectedDate)
-            .map(act => ({
-                start: `${act.date} ${act.start_time || '12:00'}:00`,
-                end: `${act.date} ${act.end_time || '13:00'}:00`,
-                title: act.title,
-                summary: act.extra_details?.training_type || 'Activity',
-                color: '#e1f5fe',
-            }));
+            .filter(act => act.date === selectedDate) // Nur Aktivitäten für den aktuellen Tag
+            .map(act => {
+                // Falls dein Backend mal keine Zeit liefert, setzen wir Standardwerte (Fallback)
+                const startTime = act.start_time ? act.start_time : '12:00';
+                const endTime = act.end_time ? act.end_time : '13:00';
+
+                return {
+                    start: `${act.date} ${startTime}:00`, // z.B. "2026-05-28 14:00:00"
+                    end: `${act.date} ${endTime}:00`,     // z.B. "2026-05-28 15:30:00"
+                    title: act.title,
+                    summary: act.extra_details?.training_type || 'Training',
+                    color: '#e1f5fe', // Ein schönes, helles Blau für den Block
+                };
+            });
+    }, [activities, selectedDate]);
+
+    // 4. WEEK STRIP DAYS
+    const weekDays = useMemo(() => {
+        const current = new Date(selectedDate);
+        const dayOfWeek = current.getDay();
+        const distanceToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        const monday = new Date(current);
+        monday.setDate(current.getDate() + distanceToMonday);
+
+        return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((dayName, index) => {
+            const dateObj = new Date(monday);
+            dateObj.setDate(monday.getDate() + index);
+            const dateString = dateObj.toISOString().split('T')[0];
+            return {
+                dayName,
+                dateString,
+                dayNumber: dateObj.getDate(),
+                isSelected: dateString === selectedDate,
+                hasActivity: activities.some(act => act.date === dateString)
+            };
+        });
     }, [activities, selectedDate]);
 
     if (loading) return <Text style={styles.centerText}>Loading schedule...</Text>;
@@ -61,7 +92,7 @@ export default function PlanScreen() {
         <View style={styles.mainContainer}>
             <Text style={styles.title}>My Kangaroo Plan</Text>
             
-            {/* ================= VIEW SWITCHER BUTTONS ================= */}
+            {/* View Switcher */}
             <View style={styles.switcherContainer}>
                 {(['Month', 'Week', 'Day'] as ViewMode[]).map((mode) => (
                     <TouchableOpacity
@@ -69,111 +100,25 @@ export default function PlanScreen() {
                         style={[styles.switcherButton, viewMode === mode && styles.switcherButtonActive]}
                         onPress={() => setViewMode(mode)}
                     >
-                        <Text style={[styles.switcherText, viewMode === mode && styles.switcherTextActive]}>
-                            {mode}
-                        </Text>
+                        <Text style={[styles.switcherText, viewMode === mode && styles.switcherTextActive]}>{mode}</Text>
                     </TouchableOpacity>
                 ))}
             </View>
 
-            {/* ================= 1. MONTH VIEW ================= */}
+            {/* Render Active View */}
             {viewMode === 'Month' && (
-                <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
-                    <View style={styles.calendarContainer}>
-                        <Calendar
-                            current={selectedDate}
-                            onDayPress={(day) => setSelectedDate(day.dateString)}
-                            markedDates={markedDates}
-                            theme={{
-                                todayTextColor: '#007AFF',
-                                arrowColor: '#007AFF',
-                                indicatorColor: '#007AFF',
-                            }}
-                        />
-                    </View>
-                    <RenderActivityList selectedDate={selectedDate} filteredActivities={filteredActivities} />
-                </ScrollView>
+                <MonthView selectedDate={selectedDate} setSelectedDate={setSelectedDate} markedDates={markedDates} filteredActivities={filteredActivities} />
             )}
-
-            {/* ================= 2. WEEK VIEW ================= */}
             {viewMode === 'Week' && (
-                <View style={{ flex: 1 }}>
-                    <CalendarProvider date={selectedDate} onDateChanged={(date) => setSelectedDate(date)}>
-                        <WeekCalendar 
-                            markedDates={markedDates} 
-                            firstDay={1} // Start week on Monday
-                            theme={{
-                                todayTextColor: '#007AFF',
-                                selectedDayBackgroundColor: '#007AFF',
-                            }}
-                        />
-                    </CalendarProvider>
-                    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
-                        <RenderActivityList selectedDate={selectedDate} filteredActivities={filteredActivities} />
-                    </ScrollView>
-                </View>
+                <WeekView selectedDate={selectedDate} setSelectedDate={setSelectedDate} weekDays={weekDays} changeWeek={changeWeek} filteredActivities={filteredActivities} />
             )}
-
-            {/* ================= 3. DAY VIEW (TIMELINE) ================= */}
             {viewMode === 'Day' && (
-                <View style={{ flex: 1, backgroundColor: '#fff' }}>
-                    <Text style={styles.timelineDateHeader}>Timeline for {selectedDate}</Text>
-                    <Timeline
-                        format24h={true}
-                        events={timelineEvents}
-                        start={0}
-                        end={24}
-                        theme={{
-                            timeLabelColor: '#666',
-                            arrowColor: '#007AFF',
-                            backgroundColor: '#fff',
-                        } as any}
-                    />
-                </View>
+                <DayView 
+                    selectedDate={selectedDate} 
+                    changeDay={changeDay} 
+                    timelineEvents={timelineEvents} // <-- Das hier ist entscheidend!
+                />
             )}
         </View>
     );
 }
-
-// Sub-component to prevent code duplication for the list view
-function RenderActivityList({ selectedDate, filteredActivities }: { selectedDate: string, filteredActivities: Activity[] }) {
-    return (
-        <>
-            <Text style={styles.sectionSubtitle}>Activities on {selectedDate}:</Text>
-            {filteredActivities.length === 0 ? (
-                <Text style={styles.emptyText}>No activities scheduled.</Text>
-            ) : (
-                filteredActivities.map((activity) => (
-                    <View key={activity.id} style={styles.card}>
-                        <Text style={styles.activityTitle}>{activity.title}</Text>
-                        <Text style={styles.activityTime}>
-                            ⏰ {activity.start_time || 'N/A'} - {activity.end_time || 'N/A'}
-                        </Text>
-                    </View>
-                ))
-            )}
-        </>
-    );
-}
-
-const styles = StyleSheet.create({
-    mainContainer: { flex: 1, backgroundColor: '#f8f9fa', paddingTop: 10 },
-    container: { paddingHorizontal: 20, flex: 1 },
-    title: { fontSize: 24, fontWeight: 'bold', marginHorizontal: 20, marginBottom: 10, marginTop: 10 },
-    
-    // Switcher
-    switcherContainer: { flexDirection: 'row', backgroundColor: '#eee', borderRadius: 8, marginHorizontal: 20, marginBottom: 15, padding: 3 },
-    switcherButton: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 6 },
-    switcherButtonActive: { backgroundColor: '#fff', elevation: 2, shadowColor: '#000', shadowOffset: {width:0, height:1}, shadowOpacity:0.1, shadowRadius:1 },
-    switcherText: { fontSize: 14, fontWeight: '500', color: '#666' },
-    switcherTextActive: { color: '#007AFF', fontWeight: 'bold' },
-
-    calendarContainer: { backgroundColor: '#fff', borderRadius: 12, overflow: 'hidden', elevation: 3, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, marginBottom: 10 },
-    sectionSubtitle: { fontSize: 18, fontWeight: 'bold', marginTop: 15, marginBottom: 10, color: '#333' },
-    timelineDateHeader: { fontSize: 16, fontWeight: '600', textAlign: 'center', marginVertical: 8, color: '#666' },
-    card: { padding: 15, backgroundColor: '#fff', borderRadius: 8, marginBottom: 10, borderLeftWidth: 4, borderLeftColor: '#007AFF' },
-    activityTitle: { fontSize: 16, fontWeight: '600', color: '#111' },
-    activityTime: { fontSize: 13, color: '#666', marginTop: 4 },
-    centerText: { textAlign: 'center', marginTop: 50, fontSize: 16, color: '#666' },
-    emptyText: { color: '#888', fontStyle: 'italic', marginTop: 5 }
-});

@@ -9,6 +9,7 @@ import { Activity } from '../../types/activity';
 import { MonthView } from '../../components/calendar/MonthView';
 import { WeekView } from '../../components/calendar/WeekView';
 import { DayView } from '../../components/calendar/DayView';
+import { getActivityColor } from '../../styles/activityTheme';
 
 type ViewMode = 'Month' | 'Week' | 'Day';
 
@@ -48,18 +49,28 @@ export default function PlanScreen() {
     // 3. TIMELINE EVENTS
     const timelineEvents = useMemo(() => {
         return activities
-            .filter(act => act.date === selectedDate) // Nur Aktivitäten für den aktuellen Tag
+            .filter(act => act.date === selectedDate)
             .map(act => {
-                // Falls dein Backend mal keine Zeit liefert, setzen wir Standardwerte (Fallback)
                 const startTime = act.start_time ? act.start_time : '12:00';
                 const endTime = act.end_time ? act.end_time : '13:00';
+                const eventBgColor = getActivityColor(act.activity_kind, act.scheduling_type);
+
+                // Hier prüfen wir den Typen ab, damit TypeScript weiß, welche extra_details existieren
+                let summaryText = 'Activity';
+                if (act.activity_kind === 'TRAINING') {
+                    summaryText = act.extra_details?.training_type || 'Training';
+                } else if (act.activity_kind === 'RECOVERY') {
+                    summaryText = act.extra_details?.recovery_type || 'Recovery';
+                } else {
+                    summaryText = act.activity_kind; // Fallback für Rest (COMPETITION, etc.)
+                }
 
                 return {
-                    start: `${act.date} ${startTime}:00`, // z.B. "2026-05-28 14:00:00"
-                    end: `${act.date} ${endTime}:00`,     // z.B. "2026-05-28 15:30:00"
+                    start: `${act.date} ${startTime}:00`,
+                    end: `${act.date} ${endTime}:00`,
                     title: act.title,
-                    summary: act.extra_details?.training_type || 'Training',
-                    color: '#e1f5fe', // Ein schönes, helles Blau für den Block
+                    summary: summaryText, // Unser sicherer, dynamischer Text
+                    color: eventBgColor, // Verwende die dynamische Farbe
                 };
             });
     }, [activities, selectedDate]);

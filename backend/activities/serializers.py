@@ -39,17 +39,21 @@ class DailyMetricSerializer(serializers.ModelSerializer):
 class ActivitySerializer(serializers.ModelSerializer):
     extra_details = serializers.SerializerMethodField(read_only=True)
     activity_type = serializers.CharField(write_only=True, required=False)
+    activity_kind = serializers.SerializerMethodField(read_only=True)
     
     # Als Write-Only deklarieren, damit DRF sie bei der Vor-Validierung akzeptiert
     duration = serializers.IntegerField(write_only=True, required=False, allow_null=True)
     flexible_slots = serializers.JSONField(write_only=True, required=False, allow_null=True)
+    # Erzwingt das Format HH:MM bei der Ausgabe ans Frontend
+    start_time = serializers.TimeField(format='%H:%M', required=False, allow_null=True)
+    end_time = serializers.TimeField(format='%H:%M', required=False, allow_null=True)
 
     class Meta:
         model = Activity
         fields = [
             'id', 'profile', 'title', 'scheduling_type', 
             'is_all_day', 'frequency', 'date', 'weekday', 
-            'start_time', 'end_time', 'extra_details', 'activity_type',
+            'start_time', 'end_time', 'extra_details', 'activity_type', 'activity_kind',
             'duration', 'flexible_slots'
         ]
         extra_kwargs = {
@@ -59,6 +63,19 @@ class ActivitySerializer(serializers.ModelSerializer):
             'start_time': {'required': False, 'allow_null': True},
             'end_time': {'required': False, 'allow_null': True},
         }
+
+    def get_activity_kind(self, obj):
+        if hasattr(obj, 'training'):
+            return 'TRAINING'
+        if hasattr(obj, 'responsibility'):
+            return 'RESPONSIBILITY'
+        if hasattr(obj, 'recovery'):
+            return 'RECOVERY'
+        if hasattr(obj, 'competition'):
+            return 'COMPETITION'
+        if hasattr(obj, 'otheractivity'):
+            return 'OTHER'
+        return 'BASE'
 
     def get_extra_details(self, obj):
         if hasattr(obj, 'training'):

@@ -120,9 +120,17 @@ export default function PlanScreen() {
             {viewMode === 'Month' && (
                 <MonthView selectedDate={selectedDate} setSelectedDate={setSelectedDate} markedDates={markedDates} filteredActivities={filteredActivities} />
             )}
+            
             {viewMode === 'Week' && (
-                <WeekView selectedDate={selectedDate} setSelectedDate={setSelectedDate} weekDays={weekDays} changeWeek={changeWeek} filteredActivities={filteredActivities} />
+                <WeekView 
+                    selectedDate={selectedDate} 
+                    setSelectedDate={setSelectedDate} 
+                    weekDays={weekDays} 
+                    changeWeek={changeWeek} 
+                    activities={activities} // <-- WICHTIG: Das ungefilterte Array übergeben!
+                />
             )}
+
             {viewMode === 'Day' && (
                 <DayView 
                     selectedDate={selectedDate} 

@@ -5,6 +5,7 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone  # WICHTIG: Für das automatische Datum importieren
 
 # --- 2. ACTIVITY (Base Class) ---
+
 class Activity(models.Model):
     class SchedulingType(models.TextChoices):
         FIXED = 'FIXED', 'Fixed'
@@ -33,7 +34,6 @@ class Activity(models.Model):
     is_all_day = models.BooleanField(default=False)
     frequency = models.CharField(max_length=20, choices=Frequency.choices, default='ONCE')
     
-    # ÄNDERUNG: null=True und blank=True erlauben, damit es optional wird
     date = models.DateField(
         null=True, 
         blank=True, 

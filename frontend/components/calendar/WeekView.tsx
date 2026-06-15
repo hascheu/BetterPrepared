@@ -147,6 +147,9 @@ export function WeekView({ selectedDate, setSelectedDate, weekDays, changeWeek, 
                                             const schedType = (act.scheduling_type || 'FIXED').toUpperCase();
                                             const eventBgColor = getActivityColor(kind, schedType);
 
+                                            // Fallback für die Uhrzeit-Anzeige erstellen
+                                            const hasTime = act.start_time && act.start_time !== '';
+
                                             return (
                                                 <TouchableOpacity
                                                     key={act.id}
@@ -156,7 +159,7 @@ export function WeekView({ selectedDate, setSelectedDate, weekDays, changeWeek, 
                                                         top: top,
                                                         left: 3,
                                                         right: 3,
-                                                        height: height - 2, 
+                                                        height: Math.max(30, height - 2), // Mindesthöhe sichern
                                                         backgroundColor: eventBgColor,
                                                         borderRadius: 6,
                                                         padding: 5,
@@ -169,13 +172,15 @@ export function WeekView({ selectedDate, setSelectedDate, weekDays, changeWeek, 
                                                     }}
                                                 >
                                                     <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#fff' }} numberOfLines={1}>
-                                                        {act.title}
+                                                        {act.title || 'Unbenannte Aktivität'}
                                                     </Text>
-                                                    {height > 40 && (
+                                                    
+                                                    {/* Sichere Weiche: Verhindert unerwünschte Text-Nodes bei flexiblen Terminen ohne Zeit */}
+                                                    {height > 45 && hasTime ? (
                                                         <Text style={{ fontSize: 9, color: 'rgba(255,255,255,0.85)', marginTop: 1 }}>
                                                             {act.start_time}
                                                         </Text>
-                                                    )}
+                                                    ) : null}
                                                 </TouchableOpacity>
                                             );
                                         })}

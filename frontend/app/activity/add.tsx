@@ -231,7 +231,6 @@ export default function AddActivityScreen() {
           </>
         )}
 
-        {/* --- LOGIK A: FIXED TERMINE (Subkomponente) --- */}
         {schedulingType === 'FIXED' && (
           <FixedSchedulingFields
             frequency={frequency}
@@ -244,7 +243,6 @@ export default function AddActivityScreen() {
           />
         )}
 
-        {/* --- LOGIK B: FLEXIBLE OPTIONEN (Subkomponente) --- */}
         {schedulingType === 'FLEXIBLE' && (
           <FlexibleSchedulingFields
             frequency={frequency}

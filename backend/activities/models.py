@@ -2,7 +2,7 @@ from django.db import models
 from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.core.exceptions import ValidationError
-from django.utils import timezone  # WICHTIG: Für das automatische Datum importieren
+from django.utils import timezone
 
 # --- 2. ACTIVITY (Base Class) ---
 
@@ -31,6 +31,9 @@ class Activity(models.Model):
     title = models.CharField(max_length=255)
     scheduling_type = models.CharField(max_length=20, choices=SchedulingType.choices, default=SchedulingType.FIXED)
     
+    # NEU: Wichtig für FREE, OPTIONAL und die Dauerberechnung im Algorithmus
+    duration = models.IntegerField(default=60, help_text="Geplante Dauer der Aktivität in Minuten.")
+    
     is_all_day = models.BooleanField(default=False)
     frequency = models.CharField(max_length=20, choices=Frequency.choices, default='ONCE')
     
@@ -48,47 +51,64 @@ class Activity(models.Model):
         errors = {}
 
         # 1. Validierung & Logik für FREQUENZEN
-        
-        # Regel: ONCE -> Datum ist absolut verpflichtend
         if self.frequency == self.Frequency.ONCE:
             if not self.date:
                 errors['date'] = 'Für einmalige Aktivitäten ist ein Datum erforderlich.'
-
-        # Regel: DAILY -> Datum optional, falls leer: setze auf heute
         elif self.frequency == self.Frequency.DAILY:
             if not self.date:
                 self.date = timezone.now().date()
-
-        # Regel: WEEKLY -> Wochentag verpflichtend, Datum optional (falls leer: heute)
         elif self.frequency == self.Frequency.WEEKLY:
             if self.weekday is None:
                 errors['weekday'] = 'Wenn die Frequenz wöchentlich ist, muss ein Wochentag ausgewählt werden.'
             if not self.date:
                 self.date = timezone.now().date()
 
-        # 2. Validierung für Zeiten vs. All-Day (Nur wenn nicht ganztägig)
-        if not self.is_all_day:
-            if not self.start_time:
-                errors['start_time'] = 'Startzeit ist erforderlich, wenn es keine ganztägige Aktivität ist.'
-            if not self.end_time:
-                errors['end_time'] = 'Endzeit ist erforderlich, wenn es keine ganztägige Aktivität ist.'
-        else:
-            # Wenn ganztägig, bereinigen wir die Zeiten für die Datenbank
+        # 2. SCHEDULING TYPE SPEZIFISCHE VALIDIERUNG
+        if self.scheduling_type == self.SchedulingType.FIXED:
+            # FIXED Termine brauchen zwingend feste Zeiten (außer All-Day)
+            if not self.is_all_day:
+                if not self.start_time:
+                    errors['start_time'] = 'Startzeit ist erforderlich für feste Termine.'
+                if not self.end_time:
+                    errors['end_time'] = 'Endzeit ist erforderlich für feste Termine.'
+            else:
+                self.start_time = None
+                self.end_time = None
+
+        elif self.scheduling_type in [self.SchedulingType.FLEXIBLE, self.SchedulingType.FREE, self.SchedulingType.OPTIONAL]:
+            # Diese Typen haben bei Erstellung der Aktivität selbst keine feste Uhrzeit,
+            # da diese erst durch Optionen (Flexible) oder den Algorithmus definiert werden.
             self.start_time = None
             self.end_time = None
+            self.is_all_day = False
 
-        # Wenn gesammelte Fehler existieren, werfen wir sie gesammelt für das Formular
         if errors:
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
-        # clean() manuell aufrufen, damit die Logik (wie das automatische Datum) 
-        # auch bei API-Saves über den Serializer getriggert wird!
         self.full_clean()
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return self.title
+        return f"{self.title} ({self.scheduling_type})"
+
+
+# --- NEU: ZUSATZMODELL FÜR FLEXIBLE TERMINEINGABEN ---
+
+class FlexibleSlot(models.Model):
+    """
+    Speichert die vorgeschlagenen Zeitfenster/Optionen für eine Aktivität vom Typ FLEXIBLE.
+    Der Scheduling-Algorithmus nutzt diese Slots, um Versionen zu berechnen.
+    """
+    activity = models.ForeignKey(Activity, on_delete=models.CASCADE, related_name='flexible_slots')
+    date = models.DateField(null=True, blank=True, help_text="Gilt für einmalige Optionen")
+    weekday = models.IntegerField(choices=Activity.Weekday.choices, null=True, blank=True, help_text="Gilt für wöchentliche Optionen")
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+
+    def __str__(self):
+        return f"Slot-Option für {self.activity.title}: {self.start_time} - {self.end_time}"
+
 
 # --- 3. SPEZIALISIERTE KLASSEN (Multi-Table Inheritance) ---
 
@@ -147,10 +167,6 @@ class Competition(Activity):
     fighting_weight = models.FloatField(null=True, blank=True)
 
 class OtherActivity(Activity):
-    """
-    Für alle Aktivitäten, die in keine andere Kategorie passen.
-    Bietet ein einfaches Freitextfeld für Notizen.
-    """
     notes = models.TextField(blank=True, null=True,  help_text="Any details about this activity")
    
 

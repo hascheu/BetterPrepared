@@ -117,6 +117,116 @@ class ActivityViewSet(viewsets.ModelViewSet):
             'type': activity_type,
             'fields': specific_fields  # Schickt NUR noch die reinen Unterklassen-Felder ans Frontend!
         })
+    
+    @action(detail=False, methods=['get'], url_path='generate-versions')
+    def generate_versions(self, request):
+        """
+        Berechnet die 3 besten Kalenderversionen für eine Kalenderwoche.
+        URL: /api/activities/generate-versions/?date=2026-07-06
+        """
+        import copy  # Erlaubt uns, Objekte im RAM sauber zu kopieren
+        
+        date_str = request.query_params.get('date')
+        if not date_str:
+            return Response(
+                {'error': 'Ein Startdatum (?date=YYYY-MM-DD) ist erforderlich.'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        try:
+            start_week_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            return Response(
+                {'error': 'Falsches Datumsformat. Bitte YYYY-MM-DD nutzen.'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        # Profil über den eingeloggten User ziehen
+        profile = request.user.profile
+        
+        # Deinen Algorithmus anwerfen
+        best_three = generate_best_versions(profile, start_week_date)
+        
+        # Daten für das Frontend serialisieren
+        response_data = []
+        for version in best_three:
+            serialized_activities = []
+            for act in version['calendar']:
+                # Wir kopieren die Aktivität kurz im RAM, um ihre Felder temporär 
+                # mit den berechneten Zeiten zu füttern, bevor der Serializer anspringt.
+                act_copy = copy.copy(act)
+                act_copy.date = act.date
+                act_copy.start_time = act.start_time
+
+                # Der Serializer übernimmt nun das automatische Formatieren (z.B. %H:%M für start_time)
+                serializer = self.get_serializer(act_copy, context={'request': request})
+                act_data = serializer.data
+                
+                # Endzeit synchron im gleichen Format (%H:%M) für die Kalenderdarstellung berechnen
+                if act.date and act.start_time:
+                    full_dt = datetime.combine(act.date, act.start_time) + timedelta(minutes=act.duration)
+                    act_data['end_time'] = full_dt.time().strftime("%H:%M")
+                else:
+                    act_data['end_time'] = None
+                    
+                serialized_activities.append(act_data)
+                
+            response_data.append({
+                'score': version['score'],
+                'activities': serialized_activities
+            })
+            
+        return Response({'versions': response_data}, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=['post'], url_path='save-version')
+    def save_version(self, request):
+        """
+        Nimmt die vom User gewählte Version entgegen und speichert sie fest in der DB.
+        URL: /api/activities/save-version/
+        """
+        activities_data = request.data.get('activities', [])
+        if not activities_data:
+            return Response(
+                {'error': 'Keine Aktivitäten zum Speichern übergeben.'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+            
+        profile = request.user.profile
+        
+        try:
+            # Wir nutzen eine Datenbank-Transaktion: Entweder ALLES wird gespeichert oder NICHTS
+            from django.db import transaction
+            with transaction.atomic():
+                for act_data in activities_data:
+                    # Sicherstellen, dass die Aktivität auch wirklich diesem User gehört
+                    activity = Activity.objects.get(id=act_data['id'], profile=profile)
+                    
+                    # Berechnete Zeiten parsen
+                    activity.date = datetime.strptime(act_data['date'], "%Y-%m-%d").date()
+                    
+                    # KORREKTUR: Erwartet das vom Serializer gelieferte HH:MM Format (ohne Sekunden)
+                    start_time_obj = datetime.strptime(act_data['start_time'], "%H:%M").time()
+                    activity.start_time = start_time_obj
+                    
+                    # Endzeit berechnen und eintragen
+                    full_datetime = datetime.combine(activity.date, start_time_obj) + timedelta(minutes=activity.duration)
+                    activity.end_time = full_datetime.time()
+                    
+                    # Fest in die Datenbank schreiben
+                    activity.save()
+                    
+            return Response({'status': 'success', 'message': 'Kalenderwoche erfolgreich gespeichert!'}, status=status.HTTP_200_OK)
+            
+        except Activity.DoesNotExist:
+            return Response(
+                {'error': 'Eine oder mehrere Aktivitäten wurden nicht gefunden oder gehören nicht zu deinem Profil.'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            return Response(
+                {'error': f'Fehler beim Speichern: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class DailyMetricViewSet(viewsets.ModelViewSet):
     """

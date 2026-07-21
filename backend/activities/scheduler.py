@@ -33,7 +33,12 @@ def load_and_categorize_activities(profile, start_date: datetime.date) -> dict:
     Holt alle relevanten Aktivitäten des Profils aus der Datenbank
     und teilt sie für die Zielwoche auf.
     """
+    # start_dt und end_dt werden hier sauber deklariert
     start_dt, end_dt = get_week_boundaries(start_date)
+    
+    # Für den Datumsvergleich extrahieren wir die reinen Dates
+    target_start_date = start_dt.date()
+    target_end_date = end_dt.date()
     
     # Alle Aktivitäten des Nutzers laden
     all_activities = Activity.objects.filter(profile=profile)
@@ -46,41 +51,36 @@ def load_and_categorize_activities(profile, start_date: datetime.date) -> dict:
     }
     
     for activity in all_activities:
-        # Prüfen, ob die Aktivität generell in dieser Woche stattfinden muss
         is_relevant = False
         
         if activity.frequency == Activity.Frequency.ONCE:
-            if activity.date and start_date <= activity.date < end_date.date():
+            # KORREKTUR: Nutzt jetzt target_start_date und target_end_date
+            if activity.date and target_start_date <= activity.date < target_end_date:
                 is_relevant = True
                 
         elif activity.frequency == Activity.Frequency.DAILY:
-            # Tägliche Termine finden jeden Tag statt, also auch in dieser Woche
             is_relevant = True
             
         elif activity.frequency == Activity.Frequency.WEEKLY:
-            # Wöchentliche Termine sind relevant (der konkrete Tag wird unten bestimmt)
             is_relevant = True
 
         if is_relevant:
-            # Wir erstellen eine Kopie im Speicher, damit wir die Originaldaten 
-            # in der DB beim Herumprobieren im Algorithmus nicht versehentlich verändern
+            # Kopie im Speicher erstellen
             act_copy = copy.copy(activity)
             
-            # Wenn es ein FIXED Termin ist, rechnen wir das konkrete Datum/Uhrzeit für diese Woche aus
             if activity.scheduling_type == Activity.SchedulingType.FIXED:
                 if activity.frequency == Activity.Frequency.WEEKLY:
-                    # Berechne das konkrete Datum für den Wochentag in dieser spezifischen Woche
-                    days_ahead = activity.weekday - start_date.weekday()
+                    # Berechne das konkrete Datum basierend auf dem echten Wochenstart (target_start_date)
+                    days_ahead = activity.weekday - target_start_date.weekday()
                     if days_ahead < 0: 
                         days_ahead += 7
-                    target_date = start_date + timedelta(days=days_ahead)
+                    target_date = target_start_date + timedelta(days=days_ahead)
                     act_copy.date = target_date
+                    
                 elif activity.frequency == Activity.Frequency.DAILY:
-                    # Für Daily müssten wir eigentlich 7 Kopien erstellen (für jeden Tag eine).
-                    # Das fangen wir hier ab:
                     for i in range(7):
                         daily_copy = copy.copy(activity)
-                        daily_copy.date = start_date + timedelta(days=i)
+                        daily_copy.date = target_start_date + timedelta(days=i)
                         categorized['FIXED'].append(daily_copy)
                     continue
                 
@@ -90,31 +90,63 @@ def load_and_categorize_activities(profile, start_date: datetime.date) -> dict:
                 
     return categorized
 
-def build_initial_blocked_slots(fixed_activities: list[Activity]) -> set[str]:
+def build_initial_blocked_slots(fixed_activities: list[Activity]) -> tuple[set[str], list[Activity]]:
     """
-    Nimmt alle fixen Termine der Woche und blockiert deren 
-    15-Minuten-Slots in einem Set.
+    Nimmt alle fixen Termine, gleicht sie auf Konflikte via Priorität ab
+    und blockiert deren 15-Minuten-Slots.
+    Gibt die bereinigten belegten Slots UND die Liste der "siegreichen" Aktivitäten zurück.
     """
     blocked_slots = set()
-    
-    for activity in fixed_activities:
-        # Falls es ein ganztägiger Termin ist, blockieren wir den kompletten Tag
+    placed_fixed = []
+
+    # Sortierung: Wichtigste Termine (HIGH = 3) zuerst verarbeiten!
+    sorted_fixed = sorted(fixed_activities, key=lambda x: x.priority, reverse=True)
+
+    for activity in sorted_fixed:
+        activity.conflicts = [] # Jedes Event bekommt eine leere Warteschlange
+        
+        # 1. Slots für das aktuelle Event berechnen
+        needed_slots = []
         if activity.is_all_day:
             current_dt = datetime.combine(activity.date, time.min)
-            for _ in range(24 * 4):  # 96 Slots für 24 Stunden
-                slot_str = current_dt.strftime("%Y-%m-%d %H:%M")
-                blocked_slots.add(slot_str)
+            for _ in range(96):  # 24 Std * 4 Slots
+                needed_slots.append(current_dt.strftime("%Y-%m-%d %H:%M"))
                 current_dt += timedelta(minutes=15)
-        
-        # Normale fixe Termine mit Start- und Endzeit
         elif activity.date and activity.start_time:
             start_dt = datetime.combine(activity.date, activity.start_time)
+            needed_slots = datetime_to_slots(start_dt, activity.duration)
+
+        # 2. Prüfen, ob diese Slots mit einem BEREITS PLATZIERTEN (wichtigeren) Termin kollidieren
+        collision_partner = None
+        for placed in placed_fixed:
+            # Wir holen uns die Slots des bereits platzierten Termins zum Abgleich
+            # (Da placed in der Schleife weiter oben war, hat es eine höhere oder gleiche Priorität)
+            placed_start = datetime.combine(placed.date, placed.start_time or time.min)
+            placed_slots = datetime_to_slots(placed_start, placed.duration) if not placed.is_all_day else []
             
-            # Wir berechnen die Slots über die duration (Minuten)
-            slots = datetime_to_slots(start_dt, activity.duration)
-            blocked_slots.update(slots)
-            
-    return blocked_slots
+            # Wenn es eine Überschneidung im Raster gibt:
+            if any(slot in placed_slots for slot in needed_slots):
+                collision_partner = placed
+                break
+
+        if collision_partner:
+            # Der bereits platzierte Termin gewinnt (da vorab sortiert).
+            # Unser aktuelles, schwächeres Event wandert in dessen Konflikt-Warteschlange!
+            collision_partner.conflicts.append({
+                "id": activity.id,
+                "title": activity.title,
+                "start_time": activity.start_time.strftime("%H:%M") if activity.start_time else None,
+                "end_time": activity.end_time.strftime("%H:%M") if activity.end_time else None,
+                "priority": activity.priority,
+                "scheduling_type": activity.scheduling_type
+            })
+            # Es wird NICHT in blocked_slots aufgenommen, da es "unsichtbar" in der Warteschlange lebt
+        else:
+            # Kein Konflikt mit wichtigeren Terminen! Das Event gewinnt den Slot.
+            placed_fixed.append(activity)
+            blocked_slots.update(needed_slots)
+
+    return blocked_slots, placed_fixed
 
 def get_concrete_slots_for_week(flex_activity: Activity, start_week_date: datetime.date) -> list[datetime]:
     """
@@ -408,11 +440,11 @@ def generate_best_versions(profile, start_week_date: datetime.date) -> list[dict
     Die Haupt-Engine: Verknüpft alle Teilschritte und gibt die 3 besten 
     Kalenderversionen mit dem höchsten Score zurück.
     """
-    # 1. Daten laden und nach Typen kategorisieren
+    # 1. Daten laden und nach Typen kategorisierung
     cat = load_and_categorize_activities(profile, start_week_date)
     
-    # 2. Initiales Belegt-Raster aus den FIXED-Terminen bauen
-    initial_blocked = build_initial_blocked_slots(cat['FIXED'])
+    # 2. ANPASSUNG: Initiales Belegt-Raster UND die bereinigten Fix-Termine holen
+    initial_blocked, cleaned_fixed = build_initial_blocked_slots(cat['FIXED'])
     
     # 3. Alle gültigen Kombinationen für FLEXIBLE-Termine berechnen
     flex_versions = calendar_flex(cat['FLEXIBLE'], initial_blocked, start_week_date)
@@ -421,12 +453,13 @@ def generate_best_versions(profile, start_week_date: datetime.date) -> list[dict
     
     # 4. Für jede Flex-Kombination die FREE- und OPTIONAL-Termine auffüllen
     for f_version in flex_versions:
-        # Basis-Kalender für diese Runde: Fixe Termine + diese Flex-Kombination
-        current_calendar = list(cat['FIXED']) + f_version
+        # Basis-Kalender für diese Runde: Bereinigte fixe Termine + diese Flex-Kombination
+        current_calendar = list(cleaned_fixed) + f_version
         
         # Das Raster aktualisieren, damit es auch die Flex-Termine dieser Runde enthält
         current_blocked = set(initial_blocked)
         for act in f_version:
+            act.conflicts = [] # Flex-Termine initialisieren ebenfalls leere Konflikte
             act_dt = datetime.combine(act.date, act.start_time)
             current_blocked.update(datetime_to_slots(act_dt, act.duration))
             
@@ -434,12 +467,14 @@ def generate_best_versions(profile, start_week_date: datetime.date) -> list[dict
         placed_free, current_blocked = add_free(
             current_calendar, cat['FREE'], current_blocked, start_week_date
         )
+        for act in placed_free: act.conflicts = []
         current_calendar.extend(placed_free)
         
         # OPTIONAL-Aktivitäten einplanen
         placed_optional, _ = add_optional(
             current_calendar, cat['OPTIONAL'], current_blocked, start_week_date
         )
+        for act in placed_optional: act.conflicts = []
         current_calendar.extend(placed_optional)
         
         # 5. Diese fertige Version bewerten
@@ -449,17 +484,30 @@ def generate_best_versions(profile, start_week_date: datetime.date) -> list[dict
             total_free_count=len(cat['FREE'])
         )
         
-        # Version abspeichern
+        # ANPASSUNG: Damit deine Views das Ergebnis sauber als JSON ausgeben können,
+        # mappen wir die instanziierten Objekte hier in lesbare Dictionaries um!
+        formatted_calendar = []
+        for act in current_calendar:
+            formatted_calendar.append({
+                "id": act.id,
+                "title": act.title,
+                "scheduling_type": act.scheduling_type,
+                "priority": act.priority,
+                "date": act.date.strftime("%Y-%m-%d") if act.date else None,
+                "start_time": act.start_time.strftime("%H:%M") if act.start_time else None,
+                "end_time": act.end_time.strftime("%H:%M") if act.end_time else None,
+                "is_all_day": act.is_all_day,
+                "conflicts": getattr(act, 'conflicts', []) # <-- Das liest unsere Warteschlange aus!
+            })
+        
         all_completed_versions.append({
             'score': version_score,
-            'calendar': current_calendar
+            'calendar': formatted_calendar
         })
         
     # 6. Nach Score sortieren (höchster zuerst) und die Top 3 herausschneiden
     all_completed_versions.sort(key=lambda x: x['score'], reverse=True)
-    best_three_versions = all_completed_versions[:3]
-    
-    return best_three_versions
+    return all_completed_versions[:3]
 
 
 

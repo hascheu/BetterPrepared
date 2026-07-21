@@ -13,6 +13,11 @@ class Activity(models.Model):
         FREE = 'FREE', 'Free'
         OPTIONAL = 'OPTIONAL', 'Optional'
 
+    class Priority(models.IntegerChoices):
+        HIGH = 3, 'High'
+        MEDIUM = 2, 'Medium'
+        LOW = 1, 'Low'
+
     class Frequency(models.TextChoices):
         ONCE = 'ONCE', 'Once'
         DAILY = 'DAILY', 'Daily'
@@ -30,7 +35,7 @@ class Activity(models.Model):
     profile = models.ForeignKey('users.Profile', on_delete=models.CASCADE, related_name='activities')
     title = models.CharField(max_length=255)
     scheduling_type = models.CharField(max_length=20, choices=SchedulingType.choices, default=SchedulingType.FIXED)
-    
+    priority = models.IntegerField(choices=Priority.choices, default=Priority.MEDIUM)
     # NEU: Wichtig für FREE, OPTIONAL und die Dauerberechnung im Algorithmus
     duration = models.IntegerField(default=60, help_text="Geplante Dauer der Aktivität in Minuten.")
     

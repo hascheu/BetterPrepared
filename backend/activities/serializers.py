@@ -46,17 +46,15 @@ class FlexibleSlotSerializer(serializers.ModelSerializer):
         model = FlexibleSlot
         fields = ['id', 'date', 'weekday', 'start_time', 'end_time']
 
-
 class ActivitySerializer(serializers.ModelSerializer):
     extra_details = serializers.SerializerMethodField(read_only=True)
     activity_type = serializers.CharField(write_only=True, required=False)
     activity_kind = serializers.SerializerMethodField(read_only=True)
     
-    # NEU: flexible_slots liest via MethodField (für GET) und akzeptiert rohes JSON (für POST)
+    # KORREKTUR: source='flexible_slots' entfernt, um Konflikte mit dem Django-Modell zu vermeiden
     flexible_slots = serializers.SerializerMethodField(read_only=True)
-    flexible_slots_input = serializers.JSONField(write_only=True, required=False, allow_null=True, source='flexible_slots')
+    flexible_slots_input = serializers.JSONField(write_only=True, required=False, allow_null=True)
     
-    # Erzwingt das Format HH:MM bei der Ausgabe ans Frontend
     start_time = serializers.TimeField(format='%H:%M', required=False, allow_null=True)
     end_time = serializers.TimeField(format='%H:%M', required=False, allow_null=True)
 
@@ -66,7 +64,7 @@ class ActivitySerializer(serializers.ModelSerializer):
             'id', 'profile', 'title', 'scheduling_type', 'duration',
             'is_all_day', 'frequency', 'date', 'weekday', 
             'start_time', 'end_time', 'extra_details', 'activity_type', 'activity_kind',
-            'flexible_slots', 'flexible_slots_input'
+            'flexible_slots', 'flexible_slots_input', 'priority'
         ]
         extra_kwargs = {
             'profile': {'required': False},
@@ -92,7 +90,6 @@ class ActivitySerializer(serializers.ModelSerializer):
         if hasattr(obj, 'otheractivity'): return OtherActivitySerializer(obj.otheractivity).data
         return None
 
-    # NEU: Gibt die gespeicherten Slots zurück ans Frontend
     def get_flexible_slots(self, obj):
         slots = obj.flexible_slots.all()
         return FlexibleSlotSerializer(slots, many=True).data
@@ -107,6 +104,15 @@ class ActivitySerializer(serializers.ModelSerializer):
         if 'time' in data and data['time'] and not data.get('start_time'):
             data['start_time'] = data['time']
 
+        # NEU: Sicherstellen, dass Zahlen-Typen auch als Integer ankommen
+        if 'duration' in data and data['duration'] is not None and data['duration'] != "":
+            try: data['duration'] = int(data['duration'])
+            except ValueError: pass
+            
+        if 'priority' in data and data['priority'] is not None and data['priority'] != "":
+            try: data['priority'] = int(data['priority'])
+            except ValueError: pass
+
         # Wochentags-Mapping
         weekday_mapping = {'MON': 0, 'TUE': 1, 'WED': 2, 'THU': 3, 'FRI': 4, 'SAT': 5, 'SUN': 6}
         
@@ -116,8 +122,9 @@ class ActivitySerializer(serializers.ModelSerializer):
             if str(weekday_str).upper() in weekday_mapping:
                 data['weekday'] = weekday_mapping[str(weekday_str).upper()]
 
-        # Endzeit-Berechnung für FIXED
-        if data.get('duration') and data.get('start_time') and not data.get('end_time'):
+        # Endzeit-Berechnung NUR für FIXED Termine
+        # (Das beugt Fehlern vor, falls das Frontend Reste mitschickt)
+        if data.get('scheduling_type') == 'FIXED' and data.get('duration') and data.get('start_time') and not data.get('end_time'):
             from datetime import datetime, timedelta
             try:
                 start_str = data['start_time'][:5]
@@ -132,7 +139,9 @@ class ActivitySerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         attrs_copy = attrs.copy()
         activity_type = attrs_copy.pop('activity_type', None)
-        attrs_copy.pop('flexible_slots', None) # Pop die Source-Zuweisung weg für die Validierung
+        
+        # KORREKTUR: Wir poppen jetzt das echte input-Feld weg, damit die Instanziierung klappt
+        attrs_copy.pop('flexible_slots_input', None) 
         
         request = self.context.get('request')
         if 'profile' not in attrs_copy and request:
@@ -168,8 +177,8 @@ class ActivitySerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         activity_type = validated_data.pop('activity_type', None)
-        # Abfangen der flexiblen Slots, bevor die Aktivität gebaut wird
-        slots_data = validated_data.pop('flexible_slots', None) or []
+        # KORREKTUR: Greift nun auf flexible_slots_input zu
+        slots_data = validated_data.pop('flexible_slots_input', None) or []
 
         request = self.context.get('request')
         raw_data = request.data if request else {}
@@ -193,12 +202,11 @@ class ActivitySerializer(serializers.ModelSerializer):
         else:
             activity = Activity.objects.create(**validated_data)
 
-        # NEU: Speichern der flexiblen Slot-Optionen in der Zusatz-Tabelle
+        # Speichern der flexiblen Slot-Optionen in der Zusatz-Tabelle
         if validated_data.get('scheduling_type') == 'FLEXIBLE' and slots_data:
             weekday_mapping = {'MON': 0, 'TUE': 1, 'WED': 2, 'THU': 3, 'FRI': 4, 'SAT': 5, 'SUN': 6}
             
             for slot in slots_data:
-                # Wochentag aus dem Frontend-String in Django-Integer umwandeln
                 raw_wd = slot.get('weekday')
                 wd_int = weekday_mapping.get(str(raw_wd).upper()) if raw_wd else None
                 

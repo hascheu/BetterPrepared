@@ -122,11 +122,16 @@ class ActivityViewSet(viewsets.ModelViewSet):
     def generate_versions(self, request):
         """
         Berechnet die 3 besten Kalenderversionen für eine Kalenderwoche.
-        URL: /api/activities/generate-versions/?date=2026-07-06
+        URL: /api/activities/generate-versions/?date=2026-07-06&scenario=conflict
         """
-        import copy  # Erlaubt uns, Objekte im RAM sauber zu kopieren
+        from datetime import datetime
+        from .scheduler import generate_best_versions 
+        # Hier importieren wir unsere ausgelagerten Test-Szenarien
+        from . import test_scenarios 
         
         date_str = request.query_params.get('date')
+        scenario_type = request.query_params.get('scenario') # Neu: Welches Test-Szenario?
+        
         if not date_str:
             return Response(
                 {'error': 'Ein Startdatum (?date=YYYY-MM-DD) ist erforderlich.'}, 
@@ -141,43 +146,32 @@ class ActivityViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST
             )
             
-        # Profil über den eingeloggten User ziehen
         profile = request.user.profile
         
-        # Deinen Algorithmus anwerfen
+        # =====================================================================
+        # DYNAMISCHE TESTDATEN-AUSWAHL
+        # =====================================================================
+        if scenario_type == 'conflict':
+            test_scenarios.create_conflict_scenario(profile, start_week_date)
+        elif scenario_type == 'heavy':
+            test_scenarios.create_heavy_week_scenario(profile, start_week_date)
+        elif scenario_type == 'clear':
+            # Praktisch: Löscht einfach nur alle Testdaten für dieses Profil
+            Activity.objects.filter(profile=profile, title__startswith="Test-").delete()
+        # =====================================================================
+
+        # Algorithmus mit den geladenen Daten ausführen
         best_three = generate_best_versions(profile, start_week_date)
         
-        # Daten für das Frontend serialisieren
         response_data = []
         for version in best_three:
-            serialized_activities = []
-            for act in version['calendar']:
-                # Wir kopieren die Aktivität kurz im RAM, um ihre Felder temporär 
-                # mit den berechneten Zeiten zu füttern, bevor der Serializer anspringt.
-                act_copy = copy.copy(act)
-                act_copy.date = act.date
-                act_copy.start_time = act.start_time
-
-                # Der Serializer übernimmt nun das automatische Formatieren (z.B. %H:%M für start_time)
-                serializer = self.get_serializer(act_copy, context={'request': request})
-                act_data = serializer.data
-                
-                # Endzeit synchron im gleichen Format (%H:%M) für die Kalenderdarstellung berechnen
-                if act.date and act.start_time:
-                    full_dt = datetime.combine(act.date, act.start_time) + timedelta(minutes=act.duration)
-                    act_data['end_time'] = full_dt.time().strftime("%H:%M")
-                else:
-                    act_data['end_time'] = None
-                    
-                serialized_activities.append(act_data)
-                
             response_data.append({
                 'score': version['score'],
-                'activities': serialized_activities
+                'activities': version['calendar']
             })
             
         return Response({'versions': response_data}, status=status.HTTP_200_OK)
-
+    
     @action(detail=False, methods=['post'], url_path='save-version')
     def save_version(self, request):
         """

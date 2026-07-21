@@ -21,16 +21,19 @@ class RegisterSerializer(serializers.ModelSerializer):
         if User.objects.filter(email=value).exists():
             raise serializers.ValidationError("Diese E-Mail-Adresse wird bereits verwendet.")
         return value
-
+    
     def create(self, validated_data):
-        """Erstellt den User mit verschlüsseltem Passwort."""
+        """Erstellt den User mit verschlüsseltem Passwort und legt sofort das Profil an."""
         user = User.objects.create_user(
             username=validated_data['username'],
             email=validated_data['email'],
             password=validated_data['password']
         )
+        
+        # NEU: Sofort das verknüpfte Profil in der Datenbank erstellen!
+        Profile.objects.create(user=user)
+        
         return user
-    
 
 class ProfileSerializer(serializers.ModelSerializer):
     # Diese Felder holen wir schreibgeschützt direkt aus dem verknüpften User-Modell

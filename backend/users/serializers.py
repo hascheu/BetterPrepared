@@ -1,14 +1,26 @@
 from django.contrib.auth.models import User
+from django.contrib.auth.password_validation import validate_password  # <-- 1. Importieren
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 from .models import Profile
 
 class RegisterSerializer(serializers.ModelSerializer):
     # Das Passwort soll nur geschrieben, aber niemals über die API wieder ausgelesen werden dürfen
-    password = serializers.CharField(write_only=True, min_length=6, style={'input_type': 'password'})
+    password = serializers.CharField(write_only=True, style={'input_type': 'password'})
 
     class Meta:
         model = User
         fields = ['username', 'email', 'password']
+
+    def validate_password(self, value):
+        """Prüft das Passwort gegen Djangos Passwort-Regeln."""
+        try:
+            # Reicht das Passwort an Djangos Prüfungs-Pipeline weiter
+            validate_password(password=value)
+        except DjangoValidationError as e:
+            # Wandelt Djangos ValidationError in den Fehler-Typ von Django REST Framework um
+            raise serializers.ValidationError(list(e.messages))
+        return value
 
     def validate_username(self, value):
         """Prüft, ob der Username bereits vergeben ist."""

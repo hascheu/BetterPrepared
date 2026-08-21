@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
+import BASE_URL from '@/config/api';
 
 export default function RegisterScreen() {
   const [username, setUsername] = useState('');
@@ -29,7 +30,7 @@ export default function RegisterScreen() {
 
     try {
       // 2. Anfrage an den (noch zu bauenden) Django-Endpunkt
-      const response = await fetch('http://127.0.0.1:8000/api/users/register/', {
+      const response = await fetch(`${BASE_URL}/api/users/register/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -46,7 +47,7 @@ export default function RegisterScreen() {
       if (response.ok) {
         console.log('Registrierung erfolgreich, starte Auto-Login...');
 
-      const loginResponse = await fetch('http://127.0.0.1:8000/api/users/login/', {
+      const loginResponse = await fetch(`${BASE_URL}/api/users/login/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }), // Nutzt die gerade eingetippten Daten
@@ -55,8 +56,10 @@ export default function RegisterScreen() {
       const loginData = await loginResponse.json();
 
       if (loginResponse.ok) {
-        // Token an den AuthContext übergeben -> Leitet automatisch zu den (tabs) weiter!
-        await signIn(loginData.access);
+        await signIn({
+          access: loginData.access,
+          refresh: loginData.refresh,
+        });
       } else {
         // Falls der Token-Schnittstelle wider Erwarten etwas fehlt
         Alert.alert('Konto erstellt', 'Bitte logge dich auf der Startseite manuell ein.');

@@ -9,6 +9,7 @@ import { FixedSchedulingFields } from '../../components/activity/FixedScheduling
 import { FlexibleSchedulingFields } from '../../components/activity/FlexibleSchedulingFields';
 import { DynamicDetailsFields } from '../../components/activity/DynamicDetailsFields'; 
 import { styles } from '../../styles/activityStyles';
+import BASE_URL from '@/config/api';
 
 export default function AddActivityScreen() {
   const { token } = useAuth();
@@ -52,7 +53,7 @@ export default function AddActivityScreen() {
     const fetchSchema = async () => {
       setLoadingSchema(true);
       try {
-        const response = await fetch(`http://127.0.0.1:8000/api/activities/schema/?type=${selectedType}`, {
+        const response = await fetch(`${BASE_URL}/api/activities/schema/?type=${selectedType}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (!response.ok) throw new Error("Fehler beim Laden");
@@ -153,7 +154,7 @@ export default function AddActivityScreen() {
         ...processedDynamicData,
       };
 
-      const response = await fetch('http://127.0.0.1:8000/api/activities/', {
+      const response = await fetch(`${BASE_URL}/api/activities/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(payload)

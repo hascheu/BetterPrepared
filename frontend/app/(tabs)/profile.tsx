@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView } from 'react-native';
 import { useAuth } from '../../context/AuthContext'; 
+import BASE_URL from '@/config/api';
 
 // TypeScript-Typ für unsere Profildaten definieren
 interface ProfileData {
@@ -27,7 +28,7 @@ export default function ProfileScreen() {
   const fetchProfile = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://127.0.0.1:8000/api/users/profile/', {
+      const response = await fetch(`${BASE_URL}/api/users/profile/`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -62,7 +63,7 @@ export default function ProfileScreen() {
   // 2. Änderungen an Django senden (PATCH)
   const handleSave = async () => {
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/users/profile/', {
+      const response = await fetch(`${BASE_URL}/api/users/profile/`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',

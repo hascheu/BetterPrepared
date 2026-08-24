@@ -1,8 +1,11 @@
+# views.py
+from datetime import datetime, timedelta
+from django.db import models, transaction
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.db import models
+
 from users.models import Profile  
 from .models import (
     Activity, Training, Responsibility, 
@@ -13,6 +16,9 @@ from .serializers import (
     ResponsibilitySerializer, RecoverySerializer, 
     CompetitionSerializer, DailyMetricSerializer, OtherActivitySerializer
 )
+from .scheduler import generate_best_versions
+from . import test_scenarios
+
 
 class ActivityViewSet(viewsets.ModelViewSet):
     """
@@ -32,12 +38,9 @@ class ActivityViewSet(viewsets.ModelViewSet):
             'competition',
             'otheractivity'
         )
+
     def perform_create(self, serializer):
-        # 1. Profil des aktuell eingeloggten Users holen
         profile = Profile.objects.get(user=self.request.user)
-        
-        # 2. Das Profil injizieren und mitspeichern. 
-        # Da wir im ViewSet sind, hat der Serializer automatisch Zugriff auf self.request über den Context!
         serializer.save(profile=profile)
     
     def _get_field_type(self, django_field):
@@ -55,21 +58,15 @@ class ActivityViewSet(viewsets.ModelViewSet):
         return 'text'
 
     def _extract_fields_from_model(self, model_class, exclude_fields=None):
-        """
-        Analysiert ein Django-Modell dynamisch über das _meta-API 
-        und baut die Feld-Konfiguration für das Frontend.
-        """
         if exclude_fields is None:
             exclude_fields = []
             
         form_fields = []
-        
         for field in model_class._meta.local_fields:
             if field.name in exclude_fields or field.primary_key or isinstance(field, models.ForeignKey):
                 continue
                 
             label = getattr(field, 'verbose_name', field.name).capitalize()
-            
             field_config = {
                 'name': field.name,
                 'label': label,
@@ -79,7 +76,6 @@ class ActivityViewSet(viewsets.ModelViewSet):
             
             if field.choices:
                 field_config['type'] = 'select'
-                # Korrektur für das JSON-Format: Übergibt lesbare Objekte statt roher Tupel
                 field_config['options'] = [{'value': choice[0], 'label': choice[1]} for choice in field.choices]
             else:
                 field_config['type'] = self._get_field_type(field)
@@ -101,21 +97,18 @@ class ActivityViewSet(viewsets.ModelViewSet):
             'competition': Competition,
             'responsibility': Responsibility,
             'recovery': Recovery,
-            'other': OtherActivity, # Heißt in deinem Modell 'OtherActivity'
+            'other': OtherActivity,
         }
 
         target_model = type_to_model.get(activity_type)
         specific_fields = []
 
         if target_model:
-            # Da _extract_fields_from_model bereits mit 'local_fields' arbeitet,
-            # werden alle geerbten Activity-Felder automatisch ignoriert!
-            # Wir müssen nur die OneToOne-Verknüpfung zur Elternklasse (activity_ptr) ausschließen.
             specific_fields = self._extract_fields_from_model(target_model, exclude_fields=['activity_ptr'])
 
         return Response({
             'type': activity_type,
-            'fields': specific_fields  # Schickt NUR noch die reinen Unterklassen-Felder ans Frontend!
+            'fields': specific_fields
         })
     
     @action(detail=False, methods=['get'], url_path='generate-versions')
@@ -124,13 +117,8 @@ class ActivityViewSet(viewsets.ModelViewSet):
         Berechnet die 3 besten Kalenderversionen für eine Kalenderwoche.
         URL: /api/activities/generate-versions/?date=2026-07-06&scenario=conflict
         """
-        from datetime import datetime
-        from .scheduler import generate_best_versions 
-        # Hier importieren wir unsere ausgelagerten Test-Szenarien
-        from . import test_scenarios 
-        
         date_str = request.query_params.get('date')
-        scenario_type = request.query_params.get('scenario') # Neu: Welches Test-Szenario?
+        scenario_type = request.query_params.get('scenario')
         
         if not date_str:
             return Response(
@@ -148,19 +136,14 @@ class ActivityViewSet(viewsets.ModelViewSet):
             
         profile = request.user.profile
         
-        # =====================================================================
-        # DYNAMISCHE TESTDATEN-AUSWAHL
-        # =====================================================================
+        # Test-Szenarien steuern
         if scenario_type == 'conflict':
             test_scenarios.create_conflict_scenario(profile, start_week_date)
         elif scenario_type == 'heavy':
             test_scenarios.create_heavy_week_scenario(profile, start_week_date)
         elif scenario_type == 'clear':
-            # Praktisch: Löscht einfach nur alle Testdaten für dieses Profil
             Activity.objects.filter(profile=profile, title__startswith="Test-").delete()
-        # =====================================================================
 
-        # Algorithmus mit den geladenen Daten ausführen
         best_three = generate_best_versions(profile, start_week_date)
         
         response_data = []
@@ -188,25 +171,18 @@ class ActivityViewSet(viewsets.ModelViewSet):
         profile = request.user.profile
         
         try:
-            # Wir nutzen eine Datenbank-Transaktion: Entweder ALLES wird gespeichert oder NICHTS
-            from django.db import transaction
             with transaction.atomic():
                 for act_data in activities_data:
-                    # Sicherstellen, dass die Aktivität auch wirklich diesem User gehört
                     activity = Activity.objects.get(id=act_data['id'], profile=profile)
                     
-                    # Berechnete Zeiten parsen
                     activity.date = datetime.strptime(act_data['date'], "%Y-%m-%d").date()
                     
-                    # KORREKTUR: Erwartet das vom Serializer gelieferte HH:MM Format (ohne Sekunden)
                     start_time_obj = datetime.strptime(act_data['start_time'], "%H:%M").time()
                     activity.start_time = start_time_obj
                     
-                    # Endzeit berechnen und eintragen
                     full_datetime = datetime.combine(activity.date, start_time_obj) + timedelta(minutes=activity.duration)
                     activity.end_time = full_datetime.time()
                     
-                    # Fest in die Datenbank schreiben
                     activity.save()
                     
             return Response({'status': 'success', 'message': 'Kalenderwoche erfolgreich gespeichert!'}, status=status.HTTP_200_OK)
@@ -222,16 +198,15 @@ class ActivityViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+
 class DailyMetricViewSet(viewsets.ModelViewSet):
     """
-    Sichert die täglichen Gesundheitswerte ab, sodass Athleten 
-    niemals gegenseitig ihre Daten einsehen können.
+    Sichert die täglichen Gesundheitswerte ab.
     """
     serializer_class = DailyMetricSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # KORREKTUR: Absicherung gegen unbefugten Datenzugriff
         return DailyMetric.objects.filter(profile__user=self.request.user)
 
     def perform_create(self, serializer):

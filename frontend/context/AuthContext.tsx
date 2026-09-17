@@ -1,11 +1,18 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { useRouter, useSegments } from 'expo-router';
-import { Platform } from 'react-native'; // WICHTIG
+import { Platform } from 'react-native';
 
+// 1. Token-Schnittstelle definieren
+interface AuthTokens {
+  access: string;
+  refresh: string;
+}
+
+// 2. AuthContextType anpassen: signIn nimmt jetzt AuthTokens entgegen
 interface AuthContextType {
   token: string | null;
-  signIn: (token: string) => Promise<void>;
+  signIn: (tokens: AuthTokens) => Promise<void>; // <-- HIER GEÄNDERT
   signOut: () => Promise<void>;
   isLoading: boolean;
 }
@@ -26,7 +33,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const router = useRouter();
 
-  // Hilfsfunktion zum Speichern (Web vs. Native)
+  // Hilfsfunktionen (unverändert)
   const saveStorageItem = async (key: string, value: string) => {
     if (Platform.OS === 'web') {
       localStorage.setItem(key, value);
@@ -35,7 +42,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Hilfsfunktion zum Laden
   const getStorageItem = async (key: string) => {
     if (Platform.OS === 'web') {
       return localStorage.getItem(key);
@@ -44,7 +50,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Hilfsfunktion zum Löschen
   const removeStorageItem = async (key: string) => {
     if (Platform.OS === 'web') {
       localStorage.removeItem(key);
@@ -56,7 +61,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const loadToken = async () => {
       try {
-        const savedToken = await getStorageItem('userToken');
+        // Lädt beim Start das Access-Token
+        const savedToken = await getStorageItem('userAccess');
         if (savedToken) {
           setToken(savedToken);
         }
@@ -80,13 +86,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [token, segments, isLoading]);
 
-  const signIn = async (newToken: string) => {
-    await saveStorageItem('userToken', newToken);
-    setToken(newToken);
+  // 3. signIn speichert jetzt BEIDE Tokens ab
+  const signIn = async (tokens: AuthTokens) => {
+    await saveStorageItem('userAccess', tokens.access);
+    await saveStorageItem('userRefresh', tokens.refresh);
+    setToken(tokens.access);
   };
 
+  // 4. signOut löscht BEIDE Tokens
   const signOut = async () => {
-    await removeStorageItem('userToken');
+    await removeStorageItem('userAccess');
+    await removeStorageItem('userRefresh');
     setToken(null);
   };
 

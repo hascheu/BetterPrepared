@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter } from 'expo-router'; 
+import BASE_URL from '@/config/api';
 
 export default function LoginScreen() {
   const [username, setUsername] = useState('');
@@ -12,40 +13,43 @@ export default function LoginScreen() {
   const { signIn } = useAuth();
 
   const handleLogin = async () => {
-    if (!username || !password) {
-      Alert.alert('Fehler', 'Bitte gib Benutzername und Passwort ein.');
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      // 1. Anfrage an dein Django-Backend
-      const response = await fetch('http://127.0.0.1:8000/api/users/login/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username, password }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        // 2. Wenn Erfolg: Token an AuthContext übergeben
-        await signIn(data.access); 
-        // Der AuthContext leitet uns automatisch zu den (tabs) weiter
-      } else {
-        // 3. Fehlerbehandlung (z.B. falsche Credentials)
-        Alert.alert('Login fehlgeschlagen', data.detail || 'Prüfe deine Eingaben.');
+      if (!username || !password) {
+        Alert.alert('Fehler', 'Bitte gib Benutzername und Passwort ein.');
+        return;
       }
-    } catch (error) {
-      console.error(error);
-      Alert.alert('Netzwerkfehler', 'Konnte keine Verbindung zum Server herstellen.');
-    } finally {
-      setLoading(false);
-    }
-  };
+
+      setLoading(true);
+
+      try {
+        // 1. Anfrage an dein Django-Backend
+        const response = await fetch(`${BASE_URL}/api/users/login/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ username, password }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          // 🟢 2. Beide Tokens als Objekt übergeben:
+          await signIn({
+            access: data.access,
+            refresh: data.refresh,
+          }); 
+          // Der AuthContext leitet dich automatisch zu den (tabs) weiter!
+        } else {
+          // 3. Fehlerbehandlung (z.B. falsche Credentials)
+          Alert.alert('Login fehlgeschlagen', data.detail || 'Prüfe deine Eingaben.');
+        }
+      } catch (error) {
+        console.error(error);
+        Alert.alert('Netzwerkfehler', 'Konnte keine Verbindung zum Server herstellen.');
+      } finally {
+        setLoading(false);
+      }
+    };
 
   return (
     <View style={styles.container}>

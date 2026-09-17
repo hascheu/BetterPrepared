@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
+import BASE_URL from '@/config/api';
 
 export default function RegisterScreen() {
   const [username, setUsername] = useState('');
@@ -9,11 +10,22 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [passwordRepeat, setPasswordRepeat] = useState('');
   const [loading, setLoading] = useState(false);
-  const { signIn } = useAuth();
   
+  // State für feldbezogene Fehlermeldungen vom Backend
+  const [fieldErrors, setFieldErrors] = useState<{
+    username?: string[];
+    email?: string[];
+    password?: string[];
+    general?: string[];
+  }>({});
+
+  const { signIn } = useAuth();
   const router = useRouter();
 
   const handleRegister = async () => {
+    // Fehler bei erneutem Versuch zurücksetzen
+    setFieldErrors({});
+
     // 1. Lokale Validierung im Frontend
     if (!username || !email || !password || !passwordRepeat) {
       Alert.alert('Fehler', 'Bitte fülle alle Felder aus.');
@@ -21,60 +33,67 @@ export default function RegisterScreen() {
     }
 
     if (password !== passwordRepeat) {
-      Alert.alert('Fehler', 'Die Passwörter stimmen nicht überein.');
+      setFieldErrors({ password: ['Die Passwörter stimmen nicht überein.'] });
       return;
     }
 
     setLoading(true);
 
     try {
-      // 2. Anfrage an den (noch zu bauenden) Django-Endpunkt
-      const response = await fetch('http://127.0.0.1:8000/api/users/register/', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          username,
-          email,
-          password
-        }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        console.log('Registrierung erfolgreich, starte Auto-Login...');
-
-      const loginResponse = await fetch('http://127.0.0.1:8000/api/users/login/', {
+      const response = await fetch(`${BASE_URL}/api/users/register/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }), // Nutzt die gerade eingetippten Daten
+        body: JSON.stringify({ username, email, password }),
       });
 
-      const loginData = await loginResponse.json();
+      const contentType = response.headers.get('content-type');
+      const isJson = contentType && contentType.includes('application/json');
+
+      if (!response.ok) {
+        if (isJson) {
+          const data = await response.json();
+          console.log('Backend Validation Errors:', data);
+
+          // Fehlerzustände für die einzelnen Felder extrahieren
+          const errors: typeof fieldErrors = {};
+
+          if (data.username) errors.username = Array.isArray(data.username) ? data.username : [data.username];
+          if (data.email) errors.email = Array.isArray(data.email) ? data.email : [data.email];
+          if (data.password) errors.password = Array.isArray(data.password) ? data.password : [data.password];
+          if (data.non_field_errors) errors.general = Array.isArray(data.non_field_errors) ? data.non_field_errors : [data.non_field_errors];
+          if (data.detail) errors.general = [data.detail];
+
+          setFieldErrors(errors);
+
+          // Zusammenfassenden Alert anzeigen
+          const allMessages = Object.entries(errors)
+            .map(([field, msgs]) => `${field.toUpperCase()}: ${msgs.join(' ')}`)
+            .join('\n');
+
+          Alert.alert('Registrierung fehlgeschlagen', allMessages || 'Bitte überprüfe deine Eingaben.');
+        } else {
+          Alert.alert('Serverfehler', `Server antwortete mit Status ${response.status}.`);
+        }
+        return;
+      }
+
+      // Erfolgsfall: Auto-Login durchführen
+      const loginResponse = await fetch(`${BASE_URL}/api/users/login/`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
 
       if (loginResponse.ok) {
-        // Token an den AuthContext übergeben -> Leitet automatisch zu den (tabs) weiter!
-        await signIn(loginData.access);
+        const loginData = await loginResponse.json();
+        await signIn({ access: loginData.access, refresh: loginData.refresh });
       } else {
-        // Falls der Token-Schnittstelle wider Erwarten etwas fehlt
-        Alert.alert('Konto erstellt', 'Bitte logge dich auf der Startseite manuell ein.');
+        Alert.alert('Erfolg', 'Konto erstellt! Bitte logge dich manuell ein.');
         router.replace('/(auth)/login');
       }
 
-      } else {
-        // Django gibt oft detaillierte Fehlermeldungen zurück (z.B. "Username existiert bereits")
-        let errorMessage = 'Prüfe deine Eingaben.';
-        if (data.username) errorMessage = `Benutzername: ${data.username.join(' ')}`;
-        else if (data.email) errorMessage = `E-Mail: ${data.email.join(' ')}`;
-        else if (data.password) errorMessage = `Passwort: ${data.password.join(' ')}`;
-        else if (data.detail) errorMessage = data.detail;
-
-        Alert.alert('Registrierung fehlgeschlagen', errorMessage);
-      }
     } catch (error) {
-      console.error(error);
+      console.error('Netzwerkfehler:', error);
       Alert.alert('Netzwerkfehler', 'Konnte keine Verbindung zum Server herstellen.');
     } finally {
       setLoading(false);
@@ -86,31 +105,53 @@ export default function RegisterScreen() {
       <Text style={styles.title}>BetterPrepared</Text>
       <Text style={styles.subtitle}>Konto erstellen</Text>
 
+      {/* Allgemeine Fehlermeldung oben */}
+      {fieldErrors.general && (
+        <View style={styles.errorBox}>
+          {fieldErrors.general.map((err, i) => (
+            <Text key={i} style={styles.errorBoxText}>{err}</Text>
+          ))}
+        </View>
+      )}
+
+      {/* Benutzername */}
       <TextInput
-        style={styles.input}
+        style={[styles.input, fieldErrors.username && styles.inputError]}
         placeholder="Benutzername"
         value={username}
         onChangeText={setUsername}
         autoCapitalize="none"
       />
+      {fieldErrors.username && (
+        <Text style={styles.fieldErrorText}>{fieldErrors.username.join(' ')}</Text>
+      )}
 
+      {/* E-Mail */}
       <TextInput
-        style={styles.input}
+        style={[styles.input, fieldErrors.email && styles.inputError]}
         placeholder="E-Mail-Adresse"
         value={email}
         onChangeText={setEmail}
         keyboardType="email-address"
         autoCapitalize="none"
       />
+      {fieldErrors.email && (
+        <Text style={styles.fieldErrorText}>{fieldErrors.email.join(' ')}</Text>
+      )}
 
+      {/* Passwort */}
       <TextInput
-        style={styles.input}
+        style={[styles.input, fieldErrors.password && styles.inputError]}
         placeholder="Passwort"
         value={password}
         onChangeText={setPassword}
         secureTextEntry
       />
+      {fieldErrors.password && (
+        <Text style={styles.fieldErrorText}>{fieldErrors.password.join(' ')}</Text>
+      )}
 
+      {/* Passwort wiederholen */}
       <TextInput
         style={styles.input}
         placeholder="Passwort wiederholen"
@@ -163,9 +204,32 @@ const styles = StyleSheet.create({
     borderColor: '#ddd',
     borderRadius: 8,
     paddingHorizontal: 15,
-    marginBottom: 15,
+    marginBottom: 10,
     fontSize: 16,
     backgroundColor: '#fafafa',
+  },
+  inputError: {
+    borderColor: '#FF3B30',
+    backgroundColor: '#FFF2F2',
+  },
+  fieldErrorText: {
+    color: '#FF3B30',
+    fontSize: 13,
+    marginBottom: 10,
+    marginTop: -5,
+    paddingLeft: 4,
+  },
+  errorBox: {
+    backgroundColor: '#FFE5E5',
+    borderColor: '#FF3B30',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 15,
+  },
+  errorBoxText: {
+    color: '#D8000C',
+    fontSize: 14,
   },
   button: {
     backgroundColor: '#007AFF',

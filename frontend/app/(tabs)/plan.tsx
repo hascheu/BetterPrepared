@@ -1,42 +1,164 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import React, { useState, useMemo, useCallback } from 'react';
+import { View, Text, TouchableOpacity } from 'react-native';
+import { useFocusEffect } from 'expo-router';
 import { useActivities } from '../../hooks/useActivities';
+import { styles } from '../../styles/calendarStyles';
+import { Activity } from '../../types/activity';
 
-interface Activity {
-    id: number;
-    title: string;
-    date: string;
-    extra_details?: {
-        training_type?: string;
-    };
-}
+// Views
+import { MonthView } from '../../components/calendar/MonthView';
+import { WeekView } from '../../components/calendar/WeekView';
+import { DayView } from '../../components/calendar/DayView';
+import { getActivityColor } from '../../styles/activityTheme';
+
+type ViewMode = 'Month' | 'Week' | 'Day';
 
 export default function PlanScreen() {
-    const { activities, loading } = useActivities() as { activities: Activity[], loading: boolean };
+    const { activities, loading: activitiesLoading, refreshActivities } = useActivities() as { 
+        activities: Activity[], 
+        loading: boolean,
+        refreshActivities?: () => void 
+    };
+    
+    const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+    const [viewMode, setViewMode] = useState<ViewMode>('Month');
 
-    if (loading) return <Text>Lade Trainingsplan...</Text>;
+    // Wenn der User von "create-plan" zurück auf "plan" wechselt, Daten neu laden
+    useFocusEffect(
+        useCallback(() => {
+            if (refreshActivities) {
+                refreshActivities();
+            }
+        }, [refreshActivities])
+    );
+
+    // NAVIGATORS
+    const changeDay = (direction: 'prev' | 'next') => {
+        const currentDate = new Date(selectedDate);
+        currentDate.setDate(currentDate.getDate() + (direction === 'next' ? 1 : -1));
+        setSelectedDate(currentDate.toISOString().split('T')[0]);
+    };
+
+    const changeWeek = (direction: 'prev' | 'next') => {
+        const currentDate = new Date(selectedDate);
+        currentDate.setDate(currentDate.getDate() + (direction === 'next' ? 7 : -7));
+        setSelectedDate(currentDate.toISOString().split('T')[0]);
+    };
+
+    // 1. CALENDAR DOTS
+    const markedDates = useMemo(() => {
+        const marks: Record<string, any> = {};
+        activities.forEach((act) => {
+            if (act.date) marks[act.date] = { marked: true, dotColor: '#007AFF' };
+        });
+        marks[selectedDate] = { ...marks[selectedDate], selected: true, selectedColor: '#007AFF' };
+        return marks;
+    }, [activities, selectedDate]);
+
+    // 2. FILTERED ACTIVITIES
+    const filteredActivities = useMemo(() => {
+        return activities.filter(act => act.date === selectedDate);
+    }, [activities, selectedDate]);
+
+    // 3. TIMELINE EVENTS
+    const timelineEvents = useMemo(() => {
+        return activities
+            .filter(act => act.date === selectedDate)
+            .map(act => {
+                const startTime = act.start_time ? act.start_time : '12:00';
+                const endTime = act.end_time ? act.end_time : '13:00';
+                const eventBgColor = getActivityColor(act.activity_kind, act.scheduling_type);
+
+                let summaryText = 'Activity';
+                if (act.activity_kind === 'TRAINING') {
+                    summaryText = act.extra_details?.training_type || 'Training';
+                } else if (act.activity_kind === 'RECOVERY') {
+                    summaryText = act.extra_details?.recovery_type || 'Recovery';
+                } else {
+                    summaryText = act.activity_kind;
+                }
+
+                return {
+                    start: `${act.date} ${startTime}:00`,
+                    end: `${act.date} ${endTime}:00`,
+                    title: act.title,
+                    summary: summaryText,
+                    color: eventBgColor,
+                };
+            });
+    }, [activities, selectedDate]);
+
+    // 4. WEEK STRIP DAYS
+    const weekDays = useMemo(() => {
+        const current = new Date(selectedDate);
+        const dayOfWeek = current.getDay();
+        const distanceToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        const monday = new Date(current);
+        monday.setDate(current.getDate() + distanceToMonday);
+
+        return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((dayName, index) => {
+            const dateObj = new Date(monday);
+            dateObj.setDate(monday.getDate() + index);
+            const dateString = dateObj.toISOString().split('T')[0];
+            return {
+                dayName,
+                dateString,
+                dayNumber: dateObj.getDate(),
+                isSelected: dateString === selectedDate,
+                hasActivity: activities.some(act => act.date === dateString)
+            };
+        });
+    }, [activities, selectedDate]);
+
+    if (activitiesLoading) return <Text style={styles.centerText}>Loading schedule...</Text>;
 
     return (
-        <ScrollView style={styles.container}>
-            <Text style={styles.title}>My Kangaroo Plan</Text>
-            {activities.map((activity) => (
-                <View key={activity.id} style={styles.card}>
-                    <Text style={styles.activityTitle}>{activity.title}</Text>
-                    <Text>{activity.date}</Text>
-                    {activity.extra_details && (
-                        <Text style={{ color: 'blue' }}>
-                            Typ: {activity.extra_details.training_type || 'Aktivität'}
-                        </Text>
-                    )}
-                </View>
-            ))}
-        </ScrollView>
+        <View style={styles.mainContainer}>
+            {/* Header / Titel */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <Text style={styles.title}>My Kangaroo Plan</Text>
+            </View>
+
+            {/* View Switcher */}
+            <View style={styles.switcherContainer}>
+                {(['Month', 'Week', 'Day'] as ViewMode[]).map((mode) => (
+                    <TouchableOpacity
+                        key={mode}
+                        style={[styles.switcherButton, viewMode === mode && styles.switcherButtonActive]}
+                        onPress={() => setViewMode(mode)}
+                    >
+                        <Text style={[styles.switcherText, viewMode === mode && styles.switcherTextActive]}>{mode}</Text>
+                    </TouchableOpacity>
+                ))}
+            </View>
+
+            {/* Render Active View */}
+            {viewMode === 'Month' && (
+                <MonthView 
+                    selectedDate={selectedDate} 
+                    setSelectedDate={setSelectedDate} 
+                    markedDates={markedDates} 
+                    filteredActivities={filteredActivities} 
+                />
+            )}
+
+            {viewMode === 'Week' && (
+                <WeekView
+                    selectedDate={selectedDate}
+                    setSelectedDate={setSelectedDate}
+                    weekDays={weekDays}
+                    changeWeek={changeWeek}
+                    activities={activities}
+                />
+            )}
+
+            {viewMode === 'Day' && (
+                <DayView
+                    selectedDate={selectedDate}
+                    changeDay={changeDay}
+                    timelineEvents={timelineEvents}
+                />
+            )}
+        </View>
     );
 }
-
-const styles = StyleSheet.create({
-    container: { padding: 20, flex: 1, backgroundColor: '#fff' },
-    title: { fontSize: 24, fontWeight: 'bold', marginBottom: 20 },
-    card: { padding: 15, borderBottomWidth: 1, borderBottomColor: '#eee' },
-    activityTitle: { fontSize: 18, fontWeight: '600' }
-});

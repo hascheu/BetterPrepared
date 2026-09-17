@@ -9,7 +9,8 @@ from rest_framework.permissions import IsAuthenticated
 from users.models import Profile  
 from .models import (
     Activity, Training, Responsibility, 
-    Recovery, Competition, DailyMetric, OtherActivity
+    Recovery, Competition, DailyMetric, OtherActivity,
+    WeeklySchedule  # <--- 1. NEU IMPORTIERT
 )
 from .serializers import (
     ActivitySerializer, TrainingSerializer, 
@@ -22,16 +23,15 @@ from . import test_scenarios
 
 class ActivityViewSet(viewsets.ModelViewSet):
     """
-    Der zentrale Knotenpunkt für den Kalender.
-    'select_related' sorgt dafür, dass alle Spezial-Daten (Training, etc.)
-    effizient mit EINER Datenbankabfrage geladen werden.
+    Zentrales ViewSet für Aktivitäten: Unterstützt CRUD, Suche & Filter.
     """
     serializer_class = ActivitySerializer
     permission_classes = [IsAuthenticated]
-
+    
     def get_queryset(self):
-        # Zeigt jedem User nur seine eigenen Aktivitäten
-        return Activity.objects.filter(profile__user=self.request.user).select_related(
+        user_profile = self.request.user.profile
+        # Basis-Queryset: Alle Aktivitäten des aktuellen Nutzers laden
+        queryset = Activity.objects.filter(profile=user_profile).select_related(
             'training', 
             'responsibility', 
             'recovery', 
@@ -39,6 +39,53 @@ class ActivityViewSet(viewsets.ModelViewSet):
             'otheractivity'
         )
 
+        # Wenn der Parameter 'only_accepted=true' mitgegeben wird (z. B. im Kalender),
+        # filtern wir nur auf akzeptierte Wochen:
+        only_accepted = self.request.query_params.get('only_accepted')
+        if only_accepted == 'true':
+            accepted_weeks = WeeklySchedule.objects.filter(
+                profile=user_profile, 
+                is_accepted=True
+            ).values_list('start_of_week', flat=True)
+
+            if not accepted_weeks:
+                return Activity.objects.none()
+
+            accepted_date_ranges = models.Q()
+            for start_day in accepted_weeks:
+                end_day = start_day + timedelta(days=6)
+                accepted_date_ranges |= models.Q(date__gte=start_day, date__lte=end_day)
+
+            queryset = queryset.filter(accepted_date_ranges)
+
+        # ================= FILTERS & SEARCH =================
+        # 1. Suche nach Titel
+        search = self.request.query_params.get('search')
+        if search:
+            queryset = queryset.filter(title__icontains=search)
+
+        # 2. Filter nach Kategorie / Subklasse (z.B. training, recovery, etc.)
+        activity_type = self.request.query_params.get('activity_type')
+        if activity_type:
+            queryset = queryset.filter(activity_type=activity_type)
+
+        # 3. Filter nach Flexibilitätsgrad (FIXED, FLEXIBLE, FREE, OPTIONAL)
+        scheduling_type = self.request.query_params.get('scheduling_type')
+        if scheduling_type:
+            queryset = queryset.filter(scheduling_type=scheduling_type)
+
+        # 4. Filter nach Priorität (1=LOW, 2=MEDIUM, 3=HIGH)
+        priority = self.request.query_params.get('priority')
+        if priority:
+            queryset = queryset.filter(priority=priority)
+
+        # 5. Filter nach Häufigkeit (ONCE, DAILY, WEEKLY)
+        frequency = self.request.query_params.get('frequency')
+        if frequency:
+            queryset = queryset.filter(frequency=frequency)
+
+        return queryset
+    
     def perform_create(self, serializer):
         profile = Profile.objects.get(user=self.request.user)
         serializer.save(profile=profile)
@@ -158,10 +205,14 @@ class ActivityViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'], url_path='save-version')
     def save_version(self, request):
         """
-        Nimmt die vom User gewählte Version entgegen und speichert sie fest in der DB.
+        Nimmt die vom User gewählte Version entgegen, speichert die Aktivitäten
+        und markiert die Woche im WeeklySchedule als akzeptiert.
         URL: /api/activities/save-version/
         """
         activities_data = request.data.get('activities', [])
+        score = request.data.get('score', 0)
+        start_of_week_str = request.data.get('start_of_week')
+
         if not activities_data:
             return Response(
                 {'error': 'Keine Aktivitäten zum Speichern übergeben.'}, 
@@ -172,10 +223,17 @@ class ActivityViewSet(viewsets.ModelViewSet):
         
         try:
             with transaction.atomic():
+                min_date = None
+                
+                # 1. Aktivitäten aktualisieren
                 for act_data in activities_data:
                     activity = Activity.objects.get(id=act_data['id'], profile=profile)
                     
-                    activity.date = datetime.strptime(act_data['date'], "%Y-%m-%d").date()
+                    act_date = datetime.strptime(act_data['date'], "%Y-%m-%d").date()
+                    activity.date = act_date
+                    
+                    if min_date is None or act_date < min_date:
+                        min_date = act_date
                     
                     start_time_obj = datetime.strptime(act_data['start_time'], "%H:%M").time()
                     activity.start_time = start_time_obj
@@ -184,6 +242,24 @@ class ActivityViewSet(viewsets.ModelViewSet):
                     activity.end_time = full_datetime.time()
                     
                     activity.save()
+
+                # 2. Montag ermitteln & WeeklySchedule-Eintrag anlegen/aktualisieren
+                if start_of_week_str:
+                    start_of_week = datetime.strptime(start_of_week_str, "%Y-%m-%d").date()
+                elif min_date:
+                    # Aus kleinstem Datum der Woche den Montag errechnen
+                    start_of_week = min_date - timedelta(days=min_date.weekday())
+                else:
+                    start_of_week = datetime.now().date() - timedelta(days=datetime.now().weekday())
+
+                WeeklySchedule.objects.update_or_create(
+                    profile=profile,
+                    start_of_week=start_of_week,
+                    defaults={
+                        'is_accepted': True,
+                        'selected_version_score': score
+                    }
+                )
                     
             return Response({'status': 'success', 'message': 'Kalenderwoche erfolgreich gespeichert!'}, status=status.HTTP_200_OK)
             

@@ -1,43 +1,56 @@
 import axios from 'axios';
+import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
+import BASE_URL from '@/config/api';
 
-// Erstelle eine zentrale Axios-Instanz
-// WICHTIG: Passe die URL an dein Test-Setup an (z. B. http://10.0.2.2:8000/api für Android Emulator)
 export const api = axios.create({
-  baseURL: 'http://localhost:8000/api', 
+  baseURL: `${BASE_URL}/api`,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
-// Interceptor für Auth-Header (optional für spätere Erweiterung)
+// Helper zum Laden des Tokens (passend zu deiner AuthContext-Logik)
+const getToken = async () => {
+  if (Platform.OS === 'web') {
+    return localStorage.getItem('userAccess');
+  }
+  return await SecureStore.getItemAsync('userAccess');
+};
+
+// Interceptor: Betankt jeden Request automatisch mit dem JWT Access-Token
 api.interceptors.request.use(
   async (config) => {
-    // Falls du Auth-Tokens nutzt, kannst du sie hier injizieren:
-    // const token = await AsyncStorage.getItem('userToken');
-    // if (token) {
-    //   config.headers.Authorization = `Bearer ${token}`;
-    // }
+    const token = await getToken();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
     return config;
   },
   (error) => Promise.reject(error)
 );
 
-// 1. Wochenplan-Versionen vom Backend berechnen lassen
-export const generateWeeklySchedule = async (date: string, scenario?: string) => {
-  const params: Record<string, string> = { date };
+// Scheduler Endpunkte
+export const generateWeeklySchedule = async (dateStr: string, scenario?: string) => {
+  let url = `/activities/generate-versions/?date=${dateStr}`;
   if (scenario) {
-    params.scenario = scenario;
+    url += `&scenario=${scenario}`;
   }
-
-  // Hier wird jetzt die 'api'-Instanz von oben korrekt genutzt:
-  const response = await api.get('/activities/generate-versions/', { params });
-  return response.data; // Liefert: { versions: [ { score: number, activities: [...] }, ... ] }
-};
-
-// 2. Gewählte Version fest in der Datenbank speichern
-export const saveWeeklyVersion = async (activities: any[]) => {
-  const response = await api.post('/activities/save-version/', { activities });
+  const response = await api.get(url);
   return response.data;
 };
 
-export default api;
+
+// services/api.ts
+
+// Interface für die Payload beim Speichern
+interface SaveVersionPayload {
+  activities: any[];
+  score?: number;
+  start_of_week?: string;
+}
+
+export const saveWeeklyVersion = async (payload: SaveVersionPayload) => {
+  const response = await api.post('/activities/save-version/', payload);
+  return response.data;
+};

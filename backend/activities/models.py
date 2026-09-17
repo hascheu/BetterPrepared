@@ -202,3 +202,14 @@ class DailyMetric(models.Model):
 
     def __str__(self):
         return f"Metric for {self.profile.user.username} on {self.date}"
+
+# models.py
+class WeeklySchedule(models.Model):
+    profile = models.ForeignKey('users.Profile', on_delete=models.CASCADE, related_name='weekly_schedules')
+    start_of_week = models.DateField() # Z. B. Montag, 2026-08-24
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_accepted = models.BooleanField(default=False)
+    selected_version_score = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        unique_together = ('profile', 'start_of_week') # Max. 1 akzeptierter Plan pro Woche

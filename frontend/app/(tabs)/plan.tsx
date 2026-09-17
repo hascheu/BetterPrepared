@@ -1,132 +1,164 @@
-// plan.tsx
-import React, { useState } from 'react';
-import { View, Text, Button, ScrollView, ActivityIndicator, StyleSheet, Alert } from 'react-native';
-import { generateWeeklySchedule, saveWeeklyVersion } from '../../services/api';
+import React, { useState, useMemo, useCallback } from 'react';
+import { View, Text, TouchableOpacity } from 'react-native';
+import { useFocusEffect } from 'expo-router';
+import { useActivities } from '../../hooks/useActivities';
+import { styles } from '../../styles/calendarStyles';
+import { Activity } from '../../types/activity';
 
-interface GeneratedActivity {
-  id: number;
-  title: string;
-  date: string;
-  start_time: string;
-  duration: number;
-  [key: string]: any;
-}
+// Views
+import { MonthView } from '../../components/calendar/MonthView';
+import { WeekView } from '../../components/calendar/WeekView';
+import { DayView } from '../../components/calendar/DayView';
+import { getActivityColor } from '../../styles/activityTheme';
 
-interface ScheduleVersion {
-  score: number;
-  activities: GeneratedActivity[];
-}
+type ViewMode = 'Month' | 'Week' | 'Day';
 
 export default function PlanScreen() {
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [versions, setVersions] = useState<ScheduleVersion[]>([]);
-  const [selectedVersionIndex, setSelectedVersionIndex] = useState<number | null>(null);
+    const { activities, loading: activitiesLoading, refreshActivities } = useActivities() as { 
+        activities: Activity[], 
+        loading: boolean,
+        refreshActivities?: () => void 
+    };
+    
+    const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+    const [viewMode, setViewMode] = useState<ViewMode>('Month');
 
-  // Beispiel-Startdatum für die Kalenderwoche (z.B. der nächste Montag)
-  const targetDate = '2026-07-06';
+    // Wenn der User von "create-plan" zurück auf "plan" wechselt, Daten neu laden
+    useFocusEffect(
+        useCallback(() => {
+            if (refreshActivities) {
+                refreshActivities();
+            }
+        }, [refreshActivities])
+    );
 
-  const handleGenerate = async (scenario?: string) => {
-    setLoading(true);
-    try {
-      const data = await generateWeeklySchedule(targetDate, scenario);
-      setVersions(data.versions);
-      if (data.versions.length > 0) {
-        setSelectedVersionIndex(0); // Standardmäßig Version 1 auswählen
-      }
-    } catch (error) {
-      console.error(error);
-      Alert.alert('Fehler', 'Kalenderversionen konnten nicht berechnet werden.');
-    } finally {
-      setLoading(false);
-    }
-  };
+    // NAVIGATORS
+    const changeDay = (direction: 'prev' | 'next') => {
+        const currentDate = new Date(selectedDate);
+        currentDate.setDate(currentDate.getDate() + (direction === 'next' ? 1 : -1));
+        setSelectedDate(currentDate.toISOString().split('T')[0]);
+    };
 
-  const handleSave = async () => {
-    if (selectedVersionIndex === null || !versions[selectedVersionIndex]) {
-      Alert.alert('Hinweis', 'Bitte wähle zuerst eine Version aus.');
-      return;
-    }
+    const changeWeek = (direction: 'prev' | 'next') => {
+        const currentDate = new Date(selectedDate);
+        currentDate.setDate(currentDate.getDate() + (direction === 'next' ? 7 : -7));
+        setSelectedDate(currentDate.toISOString().split('T')[0]);
+    };
 
-    setSaving(true);
-    try {
-      const selectedActivities = versions[selectedVersionIndex].activities;
-      await saveWeeklyVersion(selectedActivities);
-      Alert.alert('Erfolg', 'Die gewählte Wochenversion wurde erfolgreich gespeichert!');
-    } catch (error) {
-      console.error(error);
-      Alert.alert('Fehler', 'Fehler beim Speichern der Wochenversion.');
-    } finally {
-      setSaving(false);
-    }
-  };
+    // 1. CALENDAR DOTS
+    const markedDates = useMemo(() => {
+        const marks: Record<string, any> = {};
+        activities.forEach((act) => {
+            if (act.date) marks[act.date] = { marked: true, dotColor: '#007AFF' };
+        });
+        marks[selectedDate] = { ...marks[selectedDate], selected: true, selectedColor: '#007AFF' };
+        return marks;
+    }, [activities, selectedDate]);
 
-  return (
-    <ScrollView style={styles.container}>
-      <Text style={styles.heading}>Wochenplaner</Text>
+    // 2. FILTERED ACTIVITIES
+    const filteredActivities = useMemo(() => {
+        return activities.filter(act => act.date === selectedDate);
+    }, [activities, selectedDate]);
 
-      {/* Buttons zur Generierung & Testen von Szenarien */}
-      <View style={styles.buttonRow}>
-        <Button title="Plan berechnen" onPress={() => handleGenerate()} />
-        <Button title="Test: Konflikt" onPress={() => handleGenerate('conflict')} color="#e74c3c" />
-      </View>
+    // 3. TIMELINE EVENTS
+    const timelineEvents = useMemo(() => {
+        return activities
+            .filter(act => act.date === selectedDate)
+            .map(act => {
+                const startTime = act.start_time ? act.start_time : '12:00';
+                const endTime = act.end_time ? act.end_time : '13:00';
+                const eventBgColor = getActivityColor(act.activity_kind, act.scheduling_type);
 
-      {loading && <ActivityIndicator size="large" color="#0000ff" style={styles.loader} />}
+                let summaryText = 'Activity';
+                if (act.activity_kind === 'TRAINING') {
+                    summaryText = act.extra_details?.training_type || 'Training';
+                } else if (act.activity_kind === 'RECOVERY') {
+                    summaryText = act.extra_details?.recovery_type || 'Recovery';
+                } else {
+                    summaryText = act.activity_kind;
+                }
 
-      {/* Anzeige der berechneten Versionen */}
-      {versions.length > 0 && !loading && (
-        <View style={styles.versionsContainer}>
-          <Text style={styles.subHeading}>Vorgeschlagene Optionen:</Text>
-          
-          <View style={styles.tabRow}>
-            {versions.map((ver, idx) => (
-              <Button
-                key={idx}
-                title={`Option ${idx + 1} (Score: ${ver.score})`}
-                color={selectedVersionIndex === idx ? '#2ecc71' : '#7f8c8d'}
-                onPress={() => setSelectedVersionIndex(idx)}
-              />
-            ))}
-          </View>
+                return {
+                    start: `${act.date} ${startTime}:00`,
+                    end: `${act.date} ${endTime}:00`,
+                    title: act.title,
+                    summary: summaryText,
+                    color: eventBgColor,
+                };
+            });
+    }, [activities, selectedDate]);
 
-          {/* Anzeige der Aktivitäten der ausgewählten Version */}
-          {selectedVersionIndex !== null && (
-            <View style={styles.activityList}>
-              <Text style={styles.versionTitle}>Aktivitäten in Option {selectedVersionIndex + 1}:</Text>
-              {versions[selectedVersionIndex].activities.map((act) => (
-                <View key={act.id} style={styles.card}>
-                  <Text style={styles.cardTitle}>{act.title}</Text>
-                  <Text>{act.date} | Start: {act.start_time} Uhr ({act.duration} Min.)</Text>
-                </View>
-              ))}
+    // 4. WEEK STRIP DAYS
+    const weekDays = useMemo(() => {
+        const current = new Date(selectedDate);
+        const dayOfWeek = current.getDay();
+        const distanceToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+        const monday = new Date(current);
+        monday.setDate(current.getDate() + distanceToMonday);
 
-              <View style={styles.saveContainer}>
-                <Button 
-                  title={saving ? "Wird gespeichert..." : "Diese Version speichern"} 
-                  onPress={handleSave} 
-                  disabled={saving}
-                  color="#27ae60"
-                />
-              </View>
+        return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((dayName, index) => {
+            const dateObj = new Date(monday);
+            dateObj.setDate(monday.getDate() + index);
+            const dateString = dateObj.toISOString().split('T')[0];
+            return {
+                dayName,
+                dateString,
+                dayNumber: dateObj.getDate(),
+                isSelected: dateString === selectedDate,
+                hasActivity: activities.some(act => act.date === dateString)
+            };
+        });
+    }, [activities, selectedDate]);
+
+    if (activitiesLoading) return <Text style={styles.centerText}>Loading schedule...</Text>;
+
+    return (
+        <View style={styles.mainContainer}>
+            {/* Header / Titel */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <Text style={styles.title}>My Kangaroo Plan</Text>
             </View>
-          )}
-        </View>
-      )}
-    </ScrollView>
-  );
-}
 
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: '#f5f5f5' },
-  heading: { fontSize: 24, fontWeight: 'bold', marginBottom: 16 },
-  subHeading: { fontSize: 18, fontWeight: '600', marginVertical: 12 },
-  buttonRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16 },
-  loader: { marginVertical: 20 },
-  versionsContainer: { marginTop: 10 },
-  tabRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 16 },
-  activityList: { marginTop: 10 },
-  versionTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 8 },
-  card: { backgroundColor: '#fff', padding: 12, borderRadius: 8, marginBottom: 8, elevation: 2 },
-  cardTitle: { fontWeight: 'bold', fontSize: 15 },
-  saveContainer: { marginTop: 20, marginBottom: 40 }
-});
+            {/* View Switcher */}
+            <View style={styles.switcherContainer}>
+                {(['Month', 'Week', 'Day'] as ViewMode[]).map((mode) => (
+                    <TouchableOpacity
+                        key={mode}
+                        style={[styles.switcherButton, viewMode === mode && styles.switcherButtonActive]}
+                        onPress={() => setViewMode(mode)}
+                    >
+                        <Text style={[styles.switcherText, viewMode === mode && styles.switcherTextActive]}>{mode}</Text>
+                    </TouchableOpacity>
+                ))}
+            </View>
+
+            {/* Render Active View */}
+            {viewMode === 'Month' && (
+                <MonthView 
+                    selectedDate={selectedDate} 
+                    setSelectedDate={setSelectedDate} 
+                    markedDates={markedDates} 
+                    filteredActivities={filteredActivities} 
+                />
+            )}
+
+            {viewMode === 'Week' && (
+                <WeekView
+                    selectedDate={selectedDate}
+                    setSelectedDate={setSelectedDate}
+                    weekDays={weekDays}
+                    changeWeek={changeWeek}
+                    activities={activities}
+                />
+            )}
+
+            {viewMode === 'Day' && (
+                <DayView
+                    selectedDate={selectedDate}
+                    changeDay={changeDay}
+                    timelineEvents={timelineEvents}
+                />
+            )}
+        </View>
+    );
+}
